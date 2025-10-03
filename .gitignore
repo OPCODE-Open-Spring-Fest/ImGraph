@@ -16,3 +16,4 @@ profile.json
 # User defined CMake preset file.
 CMakeUserPresets.json
 *.sublime-workspace
+/.idea/
