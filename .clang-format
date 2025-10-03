@@ -12,5 +12,5 @@ AllowAllConstructorInitializersOnNextLine: false
 BinPackArguments: false
 BinPackParameters: false
 ColumnLimit: 100
-
+TabWidth: 4
 ...

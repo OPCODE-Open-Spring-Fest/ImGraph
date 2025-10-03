@@ -3,13 +3,13 @@ cmake_minimum_required(VERSION 3.22)
 include(cmake/AppleBuild.cmake)
 
 project(
-  BasicGuiProjectSetup
-  DESCRIPTION "Base GUI project setup."
+  ImGraph
+  DESCRIPTION "A graphing calculator written in C++ using a user interface built with Dear ImGui"
   VERSION 1.0.0
   LANGUAGES CXX)
 
-set(PROJECT_COMPANY_NAME "My Company")
-set(PROJECT_COMPANY_NAMESPACE "com.mycompany")  # Reverse domain name notation
+set(PROJECT_COMPANY_NAME "OPCODE")
+set(PROJECT_COMPANY_NAMESPACE "in.ac.iiitbh.gymkhana.opcode")  # Reverse domain name notation
 
 include(cmake/StandardProjectSettings.cmake)
 include(GNUInstallDirs)

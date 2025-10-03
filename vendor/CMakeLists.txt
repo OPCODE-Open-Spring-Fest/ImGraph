@@ -32,6 +32,12 @@ FetchContent_Declare(
   GIT_TAG v1.15.3
 )
 
+FetchContent_Declare(
+  exprtk
+  GIT_REPOSITORY "https://github.com/ArashPartow/exprtk.git"
+  GIT_TAG 0.0.3
+)
+
 # Settings
 
 # For SDL2 to be able to override options
@@ -46,4 +52,4 @@ add_subdirectory(imgui-setup)
 
 # Populate
 
-FetchContent_MakeAvailable(doctest fmt imgui SDL2 spdlog)
+FetchContent_MakeAvailable(doctest fmt imgui SDL2 spdlog exprtk)
