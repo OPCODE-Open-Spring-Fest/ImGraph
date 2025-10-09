@@ -15,6 +15,8 @@
 #include "Core/Resources.hpp"
 #include "Core/Window.hpp"
 #include "Settings/Project.hpp"
+#include "exprtk.hpp"
+#include "funcs.hpp"
 
 namespace App {
 
@@ -110,6 +112,8 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
+      static char function[1024] = "sin(x)";
+
       // Left Pane (expression)
       {
         ImGui::SetNextWindowPos(base_pos);
@@ -119,9 +123,8 @@ ExitStatus App::Application::run() {
             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoTitleBar);
 
-        static char text[1024] = "y = sin(x)";
         ImGui::InputTextMultiline(
-            "##search", text, sizeof(text), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
+            "##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
 
         ImGui::End();
       }
@@ -147,7 +150,7 @@ ExitStatus App::Application::run() {
         // Define your coordinate system origin (e.g., center of the canvas)
         const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
 
-        float lineThickness = 4.0f;
+        float lineThickness = 6.0f;
 
         // 1. Draw Axes
         draw_list->AddLine(ImVec2(canvas_p0.x, origin.y),
@@ -162,18 +165,33 @@ ExitStatus App::Application::run() {
         // 2. Plot a function (e.g., y = sin(x))
         const float zoom = 100.0f;  // Pixels per unit
         std::vector<ImVec2> points;
-        for (float x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.1f) {
-          float y = sin(x);
+
+        double x;
+
+        exprtk::symbol_table<double> symbolTable;
+        symbolTable.add_constants();
+        addConstants(symbolTable);
+        symbolTable.add_variable("x", x);
+
+        exprtk::expression<double> expression;
+        expression.register_symbol_table(symbolTable);
+
+        exprtk::parser<double> parser;
+        parser.compile(function, expression);
+
+        for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.1) {
+          // This loop uses the *mathematical* values of x. This is later converted to the pixel
+          // values below
+          const double y = expression.value();
 
           // Convert graph coordinates to screen coordinates
-          // Y is inverted because screen coordinates go down
           ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
           points.push_back(screen_pos);
         }
 
         // Draw the function as a polyline
         draw_list->AddPolyline(
-            points.data(), points.size(), IM_COL32(255, 0, 0, 255), ImDrawFlags_None, lineThickness);
+            points.data(), points.size(), IM_COL32(199, 68, 64, 255), ImDrawFlags_None, lineThickness);
 
         ImGui::End();
         ImGui::PopStyleColor();

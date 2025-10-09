@@ -35,7 +35,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   exprtk
   GIT_REPOSITORY "https://github.com/ArashPartow/exprtk.git"
-  GIT_TAG 0.0.3
+  GIT_TAG 0.0.3-cmake
 )
 
 # Settings
