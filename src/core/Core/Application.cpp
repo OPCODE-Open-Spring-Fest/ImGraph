@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "Core/DPIHandler.hpp"
 #include "Core/Debug/Instrumentor.hpp"
@@ -105,50 +106,77 @@ ExitStatus App::Application::run() {
     ImGui::NewFrame();
 
     if (!m_minimized) {
-      ImGui::DockSpaceOverViewport();
+      const ImGuiViewport* viewport = ImGui::GetMainViewport();
+      const ImVec2 base_pos = viewport->Pos;
+      const ImVec2 base_size = viewport->Size;
 
-      if (ImGui::BeginMainMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-          if (ImGui::MenuItem("Exit", "Cmd+Q")) {
-            stop();
-          }
-          ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("View")) {
-          ImGui::MenuItem("Some Panel", nullptr, &m_show_some_panel);
-          ImGui::MenuItem("ImGui Demo Panel", nullptr, &m_show_demo_panel);
-          ImGui::MenuItem("Debug Panels", nullptr, &m_show_debug_panel);
-          ImGui::EndMenu();
-        }
+      // Left Pane (expression)
+      {
+        ImGui::SetNextWindowPos(base_pos);
+        ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.25f, base_size.y));
+        ImGui::Begin("Left Pane",
+            nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar);
 
-        ImGui::EndMainMenuBar();
-      }
+        static char text[1024] = "y = sin(x)";
+        ImGui::InputTextMultiline(
+            "##search", text, sizeof(text), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
 
-      // Whatever GUI to implement here ...
-      if (m_show_some_panel) {
-        ImGui::Begin("Some panel", &m_show_some_panel);
-        ImGui::Text("Hello World");
         ImGui::End();
       }
 
-      // ImGUI demo panel
-      if (m_show_demo_panel) {
-        ImGui::ShowDemoWindow(&m_show_demo_panel);
-      }
+      // Right Pane (Graphing Area)
+      {
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::SetNextWindowPos(ImVec2(base_pos.x + base_size.x * 0.25f, base_pos.y));
+        ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.75f, base_size.y));
+        ImGui::Begin("Right Pane",
+            nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar);
 
-      // Debug panel
-      if (m_show_debug_panel) {
-        ImGui::ShowMetricsWindow();
-        ImGui::ShowDebugLogWindow();
+        ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-        ImGui::Begin("App debug panel", &m_show_debug_panel);
-        ImGui::Text("User config path: %s", user_config_path.c_str());
-        ImGui::Separator();
-        ImGui::Text("Font path: %s", font_path.c_str());
-        ImGui::Text("Font size: %f", font_size);
-        ImGui::Text("Global font scaling %f", io.FontGlobalScale);
-        ImGui::Text("UI scaling factor: %f", font_scaling_factor);
+        // Define the graphing area within the window
+        const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();     // Top-left corner of the window
+        const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();  // Size of the window
+        const auto canvas_p1 =
+            ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);  // Bottom-right
+
+        // Define your coordinate system origin (e.g., center of the canvas)
+        const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
+
+        float lineThickness = 4.0f;
+
+        // 1. Draw Axes
+        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y),
+            ImVec2(canvas_p1.x, origin.y),
+            IM_COL32(0, 0, 0, 255),
+            lineThickness);  // X-axis
+        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y),
+            ImVec2(origin.x, canvas_p1.y),
+            IM_COL32(0, 0, 0, 255),
+            lineThickness);  // Y-axis
+
+        // 2. Plot a function (e.g., y = sin(x))
+        const float zoom = 100.0f;  // Pixels per unit
+        std::vector<ImVec2> points;
+        for (float x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.1f) {
+          float y = sin(x);
+
+          // Convert graph coordinates to screen coordinates
+          // Y is inverted because screen coordinates go down
+          ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
+          points.push_back(screen_pos);
+        }
+
+        // Draw the function as a polyline
+        draw_list->AddPolyline(
+            points.data(), points.size(), IM_COL32(255, 0, 0, 255), ImDrawFlags_None, lineThickness);
+
         ImGui::End();
+        ImGui::PopStyleColor();
       }
     }
 
