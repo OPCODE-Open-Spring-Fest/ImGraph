@@ -1,26 +1,18 @@
-# Base GUI project setup with SDL2
+# ImGraph
 
-C++ GUI project template with [SDL2](https://www.libsdl.org) and [Dear ImGUI](https://github.com/ocornut/imgui).
+A graphing calculator written in C++ with an ImGui user interface rendered with SDL2
 
-![Image of the example app.](example-app.png)
+![Demo image](demo.png)
 
 ## How to get started
 
-After using this template to create your own repository, it is time to first run and then customize!
+The codebase of this repo is quite big, but the file that is of interest to you as a contributor is [
+`src/code/Core/Application.cpp`](src/core/Core/Application.cpp). It contains the code for parsing expressions 
+(using [ExprTk](https://github.com/ArashPartow/exprtk)) and the rendering logic for calculating the graph's points. Most,
+if not all features can be implemented by only modifying this one file.
 
-- Start here: [Quick Start](docs/QuickStart.md)
-- Continue here: [Usage Guide](docs/README.md)
+Have a look at the file, ExprTk is quite easy to get used to (a quick look at the documentation is all you need), and most of the ImGui logic should be trivial to implement if you have developed a GUI program before.
 
-## Other versions
+A high-school level understanding of coordinate geometry is required to implement many features listed in the [issues](https://github.com/OPCODE-Open-Spring-Fest/ImGraph/issues).
 
-There are other versions of this template:
-
-- [SDL3 & OpenGL](https://github.com/MartinHelmut/cpp-gui-template-sdl3-opengl)
-- [SDL3 Renderer](https://github.com/MartinHelmut/cpp-gui-template-sdl3)
-- [SDL2 & OpenGL](https://github.com/MartinHelmut/cpp-gui-template-sdl2-opengl)
-
-**Remark:** The SDL2/3 renderer versions do not support multi-viewport and detached widgets, but the OpenGL versions do.
-
-## Disclaimer
-
-Special acknowledgment to the amazing open source font [Manrope](https://manropefont.com).
+Happy contributing!
