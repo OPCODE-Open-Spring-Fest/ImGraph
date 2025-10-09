@@ -112,7 +112,7 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "tan(x)";
+      static char function[1024] = "tanh(x)";
 
       // Left Pane (expression)
       {
