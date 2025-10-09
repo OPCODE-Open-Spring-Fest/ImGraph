@@ -112,7 +112,7 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "sin(x)";
+      static char function[1024] = "tan(x)";
 
       // Left Pane (expression)
       {
@@ -179,7 +179,7 @@ ExitStatus App::Application::run() {
         exprtk::parser<double> parser;
         parser.compile(function, expression);
 
-        for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.1) {
+        for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
           // This loop uses the *mathematical* values of x. This is later converted to the pixel
           // values below
           const double y = expression.value();
