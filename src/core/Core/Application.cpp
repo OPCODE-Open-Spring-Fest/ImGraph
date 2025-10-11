@@ -123,8 +123,10 @@ ExitStatus App::Application::run() {
             ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                 ImGuiWindowFlags_NoTitleBar);
 
-        ImGui::InputTextMultiline(
-            "##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
+        ImGui::InputTextMultiline("##search",
+            function,
+            sizeof(function),
+            ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
 
         ImGui::End();
       }
@@ -162,36 +164,115 @@ ExitStatus App::Application::run() {
             IM_COL32(0, 0, 0, 255),
             lineThickness);  // Y-axis
 
-        // 2. Plot a function (e.g., y = sin(x))
         const float zoom = 100.0f;  // Pixels per unit
         std::vector<ImVec2> points;
 
-        double x;
+        // (f(t), g(t))
+        std::string func_str(function);
+        auto trim = [](std::string s) {
+          const char* ws = " \t\n\r";
+          size_t start = s.find_first_not_of(ws);
+          size_t end = s.find_last_not_of(ws);
+          if (start == std::string::npos)
+            return std::string();
+          return s.substr(start, end - start + 1);
+        };
 
-        exprtk::symbol_table<double> symbolTable;
-        symbolTable.add_constants();
-        addConstants(symbolTable);
-        symbolTable.add_variable("x", x);
+        bool plotted = false;
 
-        exprtk::expression<double> expression;
-        expression.register_symbol_table(symbolTable);
+        if (!func_str.empty() && func_str.front() == '(' && func_str.back() == ')') {
+          const std::string inner = func_str.substr(1, func_str.size() - 2);
+          // top-level comma separating f and g
+          int depth = 0;
+          size_t split_pos = std::string::npos;
+          for (size_t i = 0; i < inner.size(); ++i) {
+            char c = inner[i];
+            if (c == '(')
+              ++depth;
+            else if (c == ')')
+              --depth;
+            else if (c == ',' && depth == 0) {
+              split_pos = i;
+              break;
+            }
+          }
 
-        exprtk::parser<double> parser;
-        parser.compile(function, expression);
+          if (split_pos != std::string::npos) {
+            std::string fx = trim(inner.substr(0, split_pos));
+            std::string gx = trim(inner.substr(split_pos + 1));
 
-        for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
-          // This loop uses the *mathematical* values of x. This is later converted to the pixel
-          // values below
-          const double y = expression.value();
+            // Prepare exprtk 
+            double t = 0.0;
+            exprtk::symbol_table<double> sym_t;
+            sym_t.add_constants();
+            addConstants(sym_t);
+            sym_t.add_variable("t", t);
 
-          // Convert graph coordinates to screen coordinates
-          ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
-          points.push_back(screen_pos);
+            exprtk::expression<double> expr_fx;
+            expr_fx.register_symbol_table(sym_t);
+            exprtk::expression<double> expr_gx;
+            expr_gx.register_symbol_table(sym_t);
+
+            exprtk::parser<double> parser;
+            bool ok_fx = parser.compile(fx, expr_fx);
+            bool ok_gx = parser.compile(gx, expr_gx);
+
+            if (ok_fx && ok_gx) {
+              // iterate t  
+              const double t_min = -10.0;
+              const double t_max = 10.0;
+              const double t_step = 0.02;  
+
+              for (t = t_min; t <= t_max; t += t_step) {
+                const double vx = expr_fx.value();
+                const double vy = expr_gx.value();
+
+                
+                ImVec2 screen_pos(origin.x + static_cast<float>(vx * zoom),
+                    origin.y - static_cast<float>(vy * zoom));
+                points.push_back(screen_pos);
+              }
+
+              // Draw  curve
+              draw_list->AddPolyline(points.data(),
+                  points.size(),
+                  IM_COL32(64, 128, 199, 255),
+                  ImDrawFlags_None,
+                  lineThickness);
+              plotted = true;
+            }
+          }
         }
 
-        // Draw the function as a polyline
-        draw_list->AddPolyline(
-            points.data(), points.size(), IM_COL32(199, 68, 64, 255), ImDrawFlags_None, lineThickness);
+        if (!plotted) {
+          // Fallback to y = f(x) plotting using variable x
+          double x;
+
+          exprtk::symbol_table<double> symbolTable;
+          symbolTable.add_constants();
+          addConstants(symbolTable);
+          symbolTable.add_variable("x", x);
+
+          exprtk::expression<double> expression;
+          expression.register_symbol_table(symbolTable);
+
+          exprtk::parser<double> parser;
+          parser.compile(function, expression);
+
+          for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
+            const double y = expression.value();
+
+            
+            ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
+            points.push_back(screen_pos);
+          }
+
+          draw_list->AddPolyline(points.data(),
+              points.size(),
+              IM_COL32(199, 68, 64, 255),
+              ImDrawFlags_None,
+              lineThickness);
+        }
 
         ImGui::End();
         ImGui::PopStyleColor();
