@@ -169,14 +169,7 @@ ExitStatus App::Application::run() {
 
         // (f(t), g(t))
         std::string func_str(function);
-        auto trim = [](std::string s) {
-          const char* ws = " \t\n\r";
-          size_t start = s.find_first_not_of(ws);
-          size_t end = s.find_last_not_of(ws);
-          if (start == std::string::npos)
-            return std::string();
-          return s.substr(start, end - start + 1);
-        };
+        
 
         bool plotted = false;
 
