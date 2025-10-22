@@ -5,6 +5,7 @@
 #include <backends/imgui_impl_sdlrenderer2.h>
 #include <imgui.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -212,33 +213,70 @@ ExitStatus App::Application::run() {
         }
 
         if (!plotted) {
-          // Fallback to y = f(x) plotting using variable x
-          double x;
+          std::string func_str(function);
+          bool is_polar = func_str.find("theta") != std::string::npos;
 
-          exprtk::symbol_table<double> symbolTable;
-          symbolTable.add_constants();
-          addConstants(symbolTable);
-          symbolTable.add_variable("x", x);
+          if (is_polar) {
+            double theta;
 
-          exprtk::expression<double> expression;
-          expression.register_symbol_table(symbolTable);
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("theta", theta);
 
-          exprtk::parser<double> parser;
-          parser.compile(function, expression);
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
 
-          for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
-            const double y = expression.value();
+            exprtk::parser<double> parser;
+            if (parser.compile(function, expression)) {
+              const double theta_min = 0.0;
+              const double theta_max = 4.0 * M_PI;  
+              const double theta_step = 0.02;
 
-            
-            ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
-            points.push_back(screen_pos);
+              for (theta = theta_min; theta <= theta_max; theta += theta_step) {
+                const double r = expression.value();
+                
+                const double x = r * cos(theta);
+                const double y = r * sin(theta);
+
+                ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
+                    origin.y - static_cast<float>(y * zoom));
+                points.push_back(screen_pos);
+              }
+
+              draw_list->AddPolyline(points.data(),
+                  points.size(),
+                  IM_COL32(128, 64, 199, 255),
+                  ImDrawFlags_None,
+                  lineThickness);
+            }
+          } else {
+            double x;
+
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("x", x);
+
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
+
+            exprtk::parser<double> parser;
+            parser.compile(function, expression);
+
+            for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
+              const double y = expression.value();
+
+              ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
+              points.push_back(screen_pos);
+            }
+
+            draw_list->AddPolyline(points.data(),
+                points.size(),
+                IM_COL32(199, 68, 64, 255),
+                ImDrawFlags_None,
+                lineThickness);
           }
-
-          draw_list->AddPolyline(points.data(),
-              points.size(),
-              IM_COL32(199, 68, 64, 255),
-              ImDrawFlags_None,
-              lineThickness);
         }
 
         ImGui::End();
