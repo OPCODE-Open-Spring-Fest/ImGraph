@@ -113,21 +113,15 @@ ExitStatus App::Application::run() {
       const ImVec2 base_size = viewport->Size;
 
       static char function[1024] = "tanh(x)";
+      static float zoom = 100.0f;
 
       // Left Pane (expression)
       {
         ImGui::SetNextWindowPos(base_pos);
         ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.25f, base_size.y));
-        ImGui::Begin("Left Pane",
-            nullptr,
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoTitleBar);
-
-        ImGui::InputTextMultiline("##search",
-            function,
-            sizeof(function),
-            ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
-
+        ImGui::Begin("Left Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        ImGui::InputTextMultiline("##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
+        ImGui::SliderFloat("Graph Scale", &zoom, 10.0f, 500.0f, "%.1f");
         ImGui::End();
       }
 
@@ -136,35 +130,15 @@ ExitStatus App::Application::run() {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         ImGui::SetNextWindowPos(ImVec2(base_pos.x + base_size.x * 0.25f, base_pos.y));
         ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.75f, base_size.y));
-        ImGui::Begin("Right Pane",
-            nullptr,
-            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoTitleBar);
-
+        ImGui::Begin("Right Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-
-        // Define the graphing area within the window
-        const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();     // Top-left corner of the window
-        const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();  // Size of the window
-        const auto canvas_p1 =
-            ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);  // Bottom-right
-
-        // Define your coordinate system origin (e.g., center of the canvas)
+        const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
+        const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
+        const auto canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
         const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
-
         float lineThickness = 6.0f;
-
-        // 1. Draw Axes
-        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y),
-            ImVec2(canvas_p1.x, origin.y),
-            IM_COL32(0, 0, 0, 255),
-            lineThickness);  // X-axis
-        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y),
-            ImVec2(origin.x, canvas_p1.y),
-            IM_COL32(0, 0, 0, 255),
-            lineThickness);  // Y-axis
-
-        const float zoom = 100.0f;  // Pixels per unit
+        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
+        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
         std::vector<ImVec2> points;
 
         // (f(t), g(t))
