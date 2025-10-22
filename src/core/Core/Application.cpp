@@ -1,14 +1,11 @@
 #include "Application.hpp"
-
 #include <SDL2/SDL.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_sdlrenderer2.h>
 #include <imgui.h>
-
 #include <memory>
 #include <string>
 #include <vector>
-
 #include "Core/DPIHandler.hpp"
 #include "Core/Debug/Instrumentor.hpp"
 #include "Core/Log.hpp"
@@ -17,6 +14,8 @@
 #include "Settings/Project.hpp"
 #include "exprtk.hpp"
 #include "funcs.hpp"
+
+using namespace std;
 
 namespace App {
 
@@ -112,15 +111,43 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "tanh(x)";
       static float zoom = 100.0f;
+      struct GraphExpr {
+        char expr[1024];
+        ImVec4 col;
+        bool on;
+      };
+      static vector<GraphExpr> exprs = {{"sin(x)", ImVec4(0.0f, 0.5f, 1.0f, 1.0f), true}};
 
       // Left Pane (expression)
       {
         ImGui::SetNextWindowPos(base_pos);
         ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.25f, base_size.y));
         ImGui::Begin("Left Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
-        ImGui::InputTextMultiline("##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
+        ImGui::Text("Expressions:");
+        ImGui::Separator();
+        for (int i = 0; i < exprs.size(); i++) {
+          ImGui::PushID(i);
+          ImGui::InputTextMultiline(("##expr" + to_string(i)).c_str(), exprs[i].expr, sizeof(exprs[i].expr), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 2));
+          ImGui::SameLine();
+          ImGui::ColorEdit3(("##color" + to_string(i)).c_str(), (float*)&exprs[i].col, ImGuiColorEditFlags_NoInputs);
+          ImGui::Checkbox(("##enabled" + to_string(i)).c_str(), &exprs[i].on);
+          ImGui::SameLine();
+          ImGui::Text("Enabled");
+          if (exprs.size() > 1) {
+            ImGui::SameLine();
+            if (ImGui::Button("Delete")) {
+              exprs.erase(exprs.begin() + i);
+              i--;
+            }
+          }
+          ImGui::Separator();
+          ImGui::PopID();
+        }
+        if (ImGui::Button("Add Expression")) {
+          exprs.push_back({"x^2", ImVec4(1.0f, 0.5f, 0.0f, 1.0f), true});
+        }
+        ImGui::Separator();
         ImGui::SliderFloat("Graph Scale", &zoom, 10.0f, 500.0f, "%.1f");
         ImGui::End();
       }
@@ -139,106 +166,68 @@ ExitStatus App::Application::run() {
         float lineThickness = 6.0f;
         draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
         draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        std::vector<ImVec2> points;
 
-        // (f(t), g(t))
-        std::string func_str(function);
-        
+        for (const auto& e : exprs) {
+          if (!e.on) continue;
+          vector<ImVec2> pts;
+          string s(e.expr);
+          bool ok = false;
 
-        bool plotted = false;
-
-        if (!func_str.empty() && func_str.front() == '(' && func_str.back() == ')') {
-          const std::string inner = func_str.substr(1, func_str.size() - 2);
-          // top-level comma separating f and g
-          int depth = 0;
-          size_t split_pos = std::string::npos;
-          for (size_t i = 0; i < inner.size(); ++i) {
-            char c = inner[i];
-            if (c == '(')
-              ++depth;
-            else if (c == ')')
-              --depth;
-            else if (c == ',' && depth == 0) {
-              split_pos = i;
-              break;
-            }
-          }
-
-          if (split_pos != std::string::npos) {
-            std::string fx = trim(inner.substr(0, split_pos));
-            std::string gx = trim(inner.substr(split_pos + 1));
-
-            // Prepare exprtk 
-            double t = 0.0;
-            exprtk::symbol_table<double> sym_t;
-            sym_t.add_constants();
-            addConstants(sym_t);
-            sym_t.add_variable("t", t);
-
-            exprtk::expression<double> expr_fx;
-            expr_fx.register_symbol_table(sym_t);
-            exprtk::expression<double> expr_gx;
-            expr_gx.register_symbol_table(sym_t);
-
-            exprtk::parser<double> parser;
-            bool ok_fx = parser.compile(fx, expr_fx);
-            bool ok_gx = parser.compile(gx, expr_gx);
-
-            if (ok_fx && ok_gx) {
-              // iterate t  
-              const double t_min = -10.0;
-              const double t_max = 10.0;
-              const double t_step = 0.02;  
-
-              for (t = t_min; t <= t_max; t += t_step) {
-                const double vx = expr_fx.value();
-                const double vy = expr_gx.value();
-
-                
-                ImVec2 screen_pos(origin.x + static_cast<float>(vx * zoom),
-                    origin.y - static_cast<float>(vy * zoom));
-                points.push_back(screen_pos);
+          if (!s.empty() && s.front() == '(' && s.back() == ')') {
+            string inner = s.substr(1, s.size() - 2);
+            int d = 0;
+            size_t pos = string::npos;
+            for (size_t i = 0; i < inner.size(); ++i) {
+              char c = inner[i];
+              if (c == '(') ++d;
+              else if (c == ')') --d;
+              else if (c == ',' && d == 0) {
+                pos = i;
+                break;
               }
-
-              // Draw  curve
-              draw_list->AddPolyline(points.data(),
-                  points.size(),
-                  IM_COL32(64, 128, 199, 255),
-                  ImDrawFlags_None,
-                  lineThickness);
-              plotted = true;
+            }
+            if (pos != string::npos) {
+              string fx = trim(inner.substr(0, pos));
+              string gx = trim(inner.substr(pos + 1));
+              double t = 0.0;
+              exprtk::symbol_table<double> st;
+              st.add_constants();
+              addConstants(st);
+              st.add_variable("t", t);
+              exprtk::expression<double> ef, eg;
+              ef.register_symbol_table(st);
+              eg.register_symbol_table(st);
+              exprtk::parser<double> p;
+              if (p.compile(fx, ef) && p.compile(gx, eg)) {
+                for (t = -10.0; t <= 10.0; t += 0.02) {
+                  double vx = ef.value();
+                  double vy = eg.value();
+                  pts.push_back(ImVec2(origin.x + vx * zoom, origin.y - vy * zoom));
+                }
+                ImU32 c = IM_COL32(e.col.x * 255, e.col.y * 255, e.col.z * 255, 255);
+                draw_list->AddPolyline(pts.data(), pts.size(), c, ImDrawFlags_None, lineThickness);
+                ok = true;
+              }
             }
           }
-        }
-
-        if (!plotted) {
-          // Fallback to y = f(x) plotting using variable x
-          double x;
-
-          exprtk::symbol_table<double> symbolTable;
-          symbolTable.add_constants();
-          addConstants(symbolTable);
-          symbolTable.add_variable("x", x);
-
-          exprtk::expression<double> expression;
-          expression.register_symbol_table(symbolTable);
-
-          exprtk::parser<double> parser;
-          parser.compile(function, expression);
-
-          for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
-            const double y = expression.value();
-
-            
-            ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
-            points.push_back(screen_pos);
+          if (!ok) {
+            double x;
+            exprtk::symbol_table<double> st;
+            st.add_constants();
+            addConstants(st);
+            st.add_variable("x", x);
+            exprtk::expression<double> expr;
+            expr.register_symbol_table(st);
+            exprtk::parser<double> p;
+            if (p.compile(s, expr)) {
+              for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
+                double y = expr.value();
+                pts.push_back(ImVec2(origin.x + x * zoom, origin.y - y * zoom));
+              }
+              ImU32 c = IM_COL32(e.col.x * 255, e.col.y * 255, e.col.z * 255, 255);
+              draw_list->AddPolyline(pts.data(), pts.size(), c, ImDrawFlags_None, lineThickness);
+            }
           }
-
-          draw_list->AddPolyline(points.data(),
-              points.size(),
-              IM_COL32(199, 68, 64, 255),
-              ImDrawFlags_None,
-              lineThickness);
         }
 
         ImGui::End();
