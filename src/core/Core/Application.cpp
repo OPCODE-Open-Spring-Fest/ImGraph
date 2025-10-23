@@ -212,6 +212,97 @@ ExitStatus App::Application::run() {
           }
         }
 
+        // check for implicit form: f(x,y) = g(x,y)
+        if (!plotted) {
+          size_t equals_pos = findTopLevelEquals(func_str);
+          
+          if (equals_pos != std::string::npos) {
+            // split into LHS and RHS
+            std::string lhs = trim(func_str.substr(0, equals_pos));
+            std::string rhs = trim(func_str.substr(equals_pos + 1));
+            
+            // create expression: LHS - RHS
+            std::string implicit_expr = "(" + lhs + ") - (" + rhs + ")";
+            
+            // setup exprtk with x and y variables
+            double x = 0.0, y = 0.0;
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("x", x);
+            symbolTable.add_variable("y", y);
+            
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
+            
+            exprtk::parser<double> parser;
+            bool compile_ok = parser.compile(implicit_expr, expression);
+            
+            if (compile_ok) {
+              // grid parameters
+              const double x_min = -canvas_sz.x / (2 * zoom);
+              const double x_max = canvas_sz.x / (2 * zoom);
+              const double y_min = -canvas_sz.y / (2 * zoom);
+              const double y_max = canvas_sz.y / (2 * zoom);
+              const double step = std::max(0.008, 1.0 / zoom); //dynamic step based on zoom level
+              
+              const ImU32 implicit_color = IM_COL32(64, 199, 128, 255);
+              const float dot_radius = 2.5f;
+              
+              // scan horizontally for sign changes
+              for (y = y_min; y <= y_max; y += step) {
+                double prev_val = 0.0;
+                bool first = true;
+                
+                for (x = x_min; x <= x_max; x += step) {
+                  double curr_val = expression.value();
+                  
+                  if (!first && prev_val * curr_val < 0) {
+                    // sign change detected
+                    double t = prev_val / (prev_val - curr_val);
+                    double x_zero = (x - step) + t * step;
+                    double y_zero = y;
+                    
+                    // transform to screen coordinates and draw immediately
+                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
+                                     origin.y - static_cast<float>(y_zero * zoom));
+                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
+                  }
+                  
+                  prev_val = curr_val;
+                  first = false;
+                }
+              }
+              
+              // vertical scan
+              for (x = x_min; x <= x_max; x += step) {
+                double prev_val = 0.0;
+                bool first = true;
+                
+                for (y = y_min; y <= y_max; y += step) {
+                  double curr_val = expression.value();
+                  
+                  if (!first && prev_val * curr_val < 0) {
+                    // sign change detected
+                    double t = prev_val / (prev_val - curr_val);
+                    double x_zero = x;
+                    double y_zero = (y - step) + t * step;
+        
+                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
+                                     origin.y - static_cast<float>(y_zero * zoom));
+                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
+                  }
+                  
+                  prev_val = curr_val;
+                  first = false;
+                }
+              }
+              
+              plotted = true;
+            }
+          }
+        }
+
         if (!plotted) {
           std::string func_str(function);
           bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
