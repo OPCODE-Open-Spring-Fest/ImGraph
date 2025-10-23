@@ -271,7 +271,7 @@ ExitStatus App::Application::run() {
               const double x_max = canvas_sz.x / (2 * zoom);
               const double y_min = -canvas_sz.y / (2 * zoom);
               const double y_max = canvas_sz.y / (2 * zoom);
-              const double step = 0.02;
+              const double step = std::max(0.008, 1.0 / zoom); //dynamic step based on zoom level
               
               const ImU32 implicit_color = IM_COL32(64, 199, 128, 255);
               const float dot_radius = 2.5f;
