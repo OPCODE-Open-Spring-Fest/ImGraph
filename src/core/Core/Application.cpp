@@ -113,7 +113,7 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "tanh(x)";
+      static char function[1024] = "r = 1 + 0.5*cos(theta)";
       static float zoom = 100.0f;
 
       // Left Pane (expression)
@@ -214,7 +214,7 @@ ExitStatus App::Application::run() {
 
         if (!plotted) {
           std::string func_str(function);
-          bool is_polar = func_str.find("theta") != std::string::npos;
+          bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
 
           if (is_polar) {
             double theta;
@@ -227,8 +227,19 @@ ExitStatus App::Application::run() {
             exprtk::expression<double> expression;
             expression.register_symbol_table(symbolTable);
 
+            std::string polar_function = func_str;
+            size_t eq_pos = func_str.find("r=");
+            if (eq_pos == std::string::npos) {
+              eq_pos = func_str.find("r =");
+            }
+            if (eq_pos != std::string::npos) {
+              size_t start_pos = func_str.find("=", eq_pos) + 1;
+              polar_function = func_str.substr(start_pos);
+              polar_function.erase(0, polar_function.find_first_not_of(" \t"));
+            }
+
             exprtk::parser<double> parser;
-            if (parser.compile(function, expression)) {
+            if (parser.compile(polar_function, expression)) {
               const double theta_min = 0.0;
               const double theta_max = 4.0 * M_PI;  
               const double theta_step = 0.02;
