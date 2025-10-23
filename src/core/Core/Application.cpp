@@ -135,7 +135,40 @@ ExitStatus App::Application::run() {
         const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
         const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
         const auto canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
-        const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
+        // --- PANNING IMPLEMENTATION BEGIN ---
+        static bool isPanning = false;
+        static ImVec2 lastMousePos = {0.0f, 0.0f};
+        static ImVec2 originOffset = {0.0f, 0.0f};
+
+        // Get mouse position
+        ImVec2 mousePos = ImGui::GetMousePos();
+
+        // Detect click start only when cursor is inside the graphing area
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            isPanning = true;
+            lastMousePos = mousePos;
+        }
+
+        // Stop panning when mouse released
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+            isPanning = false;
+        }
+
+        // While dragging, update origin offset
+        if (isPanning && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+            ImVec2 delta = ImVec2(mousePos.x - lastMousePos.x, mousePos.y - lastMousePos.y);
+            originOffset.x += delta.x;
+            originOffset.y += delta.y;
+            lastMousePos = mousePos;
+        }
+
+        // Apply offset to origin
+        const ImVec2 origin(
+            canvas_p0.x + canvas_sz.x * 0.5f + originOffset.x,
+            canvas_p0.y + canvas_sz.y * 0.5f + originOffset.y
+        );
+        // --- PANNING IMPLEMENTATION END ---
+
         float lineThickness = 6.0f;
         draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
         draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
@@ -191,12 +224,13 @@ ExitStatus App::Application::run() {
               const double t_step = 0.02;  
 
               for (t = t_min; t <= t_max; t += t_step) {
-                const double vx = expr_fx.value();
-                const double vy = expr_gx.value();
-
-                
-                ImVec2 screen_pos(origin.x + static_cast<float>(vx * zoom),
-                    origin.y - static_cast<float>(vy * zoom));
+               const double vx = expr_fx.value();
+               const double vy = expr_gx.value();
+              // The 'origin' variable already includes the pan offset.
+                ImVec2 screen_pos(
+                         origin.x + static_cast<float>(vx * zoom),
+                          origin.y - static_cast<float>(vy * zoom)
+                         );
                 points.push_back(screen_pos);
               }
 
@@ -226,11 +260,18 @@ ExitStatus App::Application::run() {
           exprtk::parser<double> parser;
           parser.compile(function, expression);
 
-          for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
-            const double y = expression.value();
+          // Calculate the visible x-range in world-space, accounting for the pan
+          const float world_x_min = (-canvas_sz.x * 0.5f - originOffset.x) / zoom;
+          const float world_x_max = ( canvas_sz.x * 0.5f - originOffset.x) / zoom;
 
-            
-            ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
+          // Evaluate the function across the correct visible world-range
+          for (x = world_x_min; x <= world_x_max; x += 0.05) {
+            const double y = expression.value();
+           // The 'origin' variable already includes the pan offset.
+            ImVec2 screen_pos(
+            origin.x + static_cast<float>(x * zoom),
+            origin.y - static_cast<float>(y * zoom)
+            );
             points.push_back(screen_pos);
           }
 
