@@ -17,3 +17,5 @@ profile.json
 CMakeUserPresets.json
 *.sublime-workspace
 .idea/
+
+.vs/
