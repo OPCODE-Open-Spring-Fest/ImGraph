@@ -5,6 +5,7 @@
 #include <backends/imgui_impl_sdlrenderer2.h>
 #include <imgui.h>
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -112,7 +113,7 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "tanh(x)";
+      static char function[1024] = "r = 1 + 0.5*cos(theta)";
       static float zoom = 100.0f;
 
       // Left Pane (expression)
@@ -245,20 +246,159 @@ ExitStatus App::Application::run() {
           }
         }
 
+        // check for implicit form: f(x,y) = g(x,y)
         if (!plotted) {
-          // Fallback to y = f(x) plotting using variable x
-          double x;
+          size_t equals_pos = findTopLevelEquals(func_str);
+          
+          if (equals_pos != std::string::npos) {
+            // split into LHS and RHS
+            std::string lhs = trim(func_str.substr(0, equals_pos));
+            std::string rhs = trim(func_str.substr(equals_pos + 1));
+            
+            // create expression: LHS - RHS
+            std::string implicit_expr = "(" + lhs + ") - (" + rhs + ")";
+            
+            // setup exprtk with x and y variables
+            double x = 0.0, y = 0.0;
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("x", x);
+            symbolTable.add_variable("y", y);
+            
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
+            
+            exprtk::parser<double> parser;
+            bool compile_ok = parser.compile(implicit_expr, expression);
+            
+            if (compile_ok) {
+              // grid parameters
+              const double x_min = -canvas_sz.x / (2 * zoom);
+              const double x_max = canvas_sz.x / (2 * zoom);
+              const double y_min = -canvas_sz.y / (2 * zoom);
+              const double y_max = canvas_sz.y / (2 * zoom);
+              const double step = std::max(0.008, 1.0 / zoom); //dynamic step based on zoom level
+              
+              const ImU32 implicit_color = IM_COL32(64, 199, 128, 255);
+              const float dot_radius = 2.5f;
+              
+              // scan horizontally for sign changes
+              for (y = y_min; y <= y_max; y += step) {
+                double prev_val = 0.0;
+                bool first = true;
+                
+                for (x = x_min; x <= x_max; x += step) {
+                  double curr_val = expression.value();
+                  
+                  if (!first && prev_val * curr_val < 0) {
+                    // sign change detected
+                    double t = prev_val / (prev_val - curr_val);
+                    double x_zero = (x - step) + t * step;
+                    double y_zero = y;
+                    
+                    // transform to screen coordinates and draw immediately
+                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
+                                     origin.y - static_cast<float>(y_zero * zoom));
+                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
+                  }
+                  
+                  prev_val = curr_val;
+                  first = false;
+                }
+              }
+              
+              // vertical scan
+              for (x = x_min; x <= x_max; x += step) {
+                double prev_val = 0.0;
+                bool first = true;
+                
+                for (y = y_min; y <= y_max; y += step) {
+                  double curr_val = expression.value();
+                  
+                  if (!first && prev_val * curr_val < 0) {
+                    // sign change detected
+                    double t = prev_val / (prev_val - curr_val);
+                    double x_zero = x;
+                    double y_zero = (y - step) + t * step;
+        
+                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
+                                     origin.y - static_cast<float>(y_zero * zoom));
+                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
+                  }
+                  
+                  prev_val = curr_val;
+                  first = false;
+                }
+              }
+              
+              plotted = true;
+            }
+          }
+        }
 
-          exprtk::symbol_table<double> symbolTable;
-          symbolTable.add_constants();
-          addConstants(symbolTable);
-          symbolTable.add_variable("x", x);
+        if (!plotted) {
+          std::string func_str(function);
+          bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
 
-          exprtk::expression<double> expression;
-          expression.register_symbol_table(symbolTable);
+          if (is_polar) {
+            double theta;
 
-          exprtk::parser<double> parser;
-          parser.compile(function, expression);
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("theta", theta);
+
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
+
+            std::string polar_function = func_str;
+            size_t eq_pos = func_str.find("r=");
+            if (eq_pos == std::string::npos) {
+              eq_pos = func_str.find("r =");
+            }
+            if (eq_pos != std::string::npos) {
+              size_t start_pos = func_str.find("=", eq_pos) + 1;
+              polar_function = func_str.substr(start_pos);
+              polar_function.erase(0, polar_function.find_first_not_of(" \t"));
+            }
+
+            exprtk::parser<double> parser;
+            if (parser.compile(polar_function, expression)) {
+              const double theta_min = 0.0;
+              const double theta_max = 4.0 * M_PI;  
+              const double theta_step = 0.02;
+
+              for (theta = theta_min; theta <= theta_max; theta += theta_step) {
+                const double r = expression.value();
+                
+                const double x = r * cos(theta);
+                const double y = r * sin(theta);
+
+                ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
+                    origin.y - static_cast<float>(y * zoom));
+                points.push_back(screen_pos);
+              }
+
+              draw_list->AddPolyline(points.data(),
+                  points.size(),
+                  IM_COL32(128, 64, 199, 255),
+                  ImDrawFlags_None,
+                  lineThickness);
+            }
+          } else {
+            double x;
+
+            exprtk::symbol_table<double> symbolTable;
+            symbolTable.add_constants();
+            addConstants(symbolTable);
+            symbolTable.add_variable("x", x);
+
+            exprtk::expression<double> expression;
+            expression.register_symbol_table(symbolTable);
+
+            exprtk::parser<double> parser;
+            parser.compile(function, expression);
 
           // Calculate the visible x-range in world-space, accounting for the pan
           const float world_x_min = (-canvas_sz.x * 0.5f - originOffset.x) / zoom;
@@ -275,11 +415,12 @@ ExitStatus App::Application::run() {
             points.push_back(screen_pos);
           }
 
-          draw_list->AddPolyline(points.data(),
-              points.size(),
-              IM_COL32(199, 68, 64, 255),
-              ImDrawFlags_None,
-              lineThickness);
+            draw_list->AddPolyline(points.data(),
+                points.size(),
+                IM_COL32(199, 68, 64, 255),
+                ImDrawFlags_None,
+                lineThickness);
+          }
         }
 
         ImGui::End();

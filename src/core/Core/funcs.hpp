@@ -28,5 +28,33 @@ inline std::string trim(const std::string& s) {
   return s.substr(start, end - start + 1);
 }
 
+// function to find top-level '=' that's not part of ==, <=, >=, !=
+static size_t findTopLevelEquals(const std::string& str) {
+  int depth = 0;
+
+  for (size_t i = 0; i < str.size(); ++i) {
+    char c = str[i];
+    if (c == '(') {
+      ++depth;
+    } else if (c == ')') {
+      --depth;
+    } else if (c == '=' && depth == 0) {
+      // check it's not part of ==, <=, >=, !=
+      bool isOperator = false;
+      if (i > 0 && (str[i-1] == '=' || str[i-1] == '<' || str[i-1] == '>' || str[i-1] == '!')) {
+        isOperator = true;
+      }
+      if (i + 1 < str.size() && str[i+1] == '=') {
+        isOperator = true;
+      }
+      
+      if (!isOperator) {
+        return i;
+      }
+    }
+  }
+  return std::string::npos;
+}
+
 #endif  // IMGRAPH_FUNCS_HPP
 
