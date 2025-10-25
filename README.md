@@ -7,7 +7,7 @@ A graphing calculator written in C++ with an ImGui user interface rendered with 
 ## How to get started
 
 The codebase of this repo is quite big, but the file that is of interest to you as a contributor is [
-`src/code/Core/Application.cpp`](src/core/Core/Application.cpp). It contains the code for parsing expressions 
+`src/core/Core/Application.cpp`](src/core/Core/Application.cpp). It contains the code for parsing expressions 
 (using [ExprTk](https://github.com/ArashPartow/exprtk)) and the rendering logic for calculating the graph's points. Most,
 if not all features can be implemented by only modifying this one file.
 
