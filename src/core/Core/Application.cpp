@@ -212,6 +212,49 @@ ExitStatus App::Application::run() {
           }
         }
 
+        // check for inequality 
+        if (!plotted && hasInequalityOperator(func_str)) {
+          double x = 0.0, y = 0.0;
+          exprtk::symbol_table<double> symbol_table;
+          symbol_table.add_constants();
+          addConstants(symbol_table);
+          symbol_table.add_variable("x", x);
+          symbol_table.add_variable("y", y);
+          
+          exprtk::expression<double> expression;
+          expression.register_symbol_table(symbol_table);
+          
+          exprtk::parser<double> parser;
+          
+          if (parser.compile(func_str, expression)) {
+            // grid parameters
+            const double x_min = -canvas_sz.x / (2 * zoom);
+            const double x_max = canvas_sz.x / (2 * zoom);
+            const double y_min = -canvas_sz.y / (2 * zoom);
+            const double y_max = canvas_sz.y / (2 * zoom);
+            
+            // adaptive step size with performance limit
+            const double step = std::max(0.025, 1.5 / zoom);
+            const ImU32 inequality_color = IM_COL32(100, 150, 255, 180);
+            const float dot_size = std::max(1.5f, zoom / 60.0f);
+            
+            
+            for (y = y_min; y <= y_max; y += step) {
+              for (x = x_min; x <= x_max; x += step) {
+                
+                // if expression is true, plot the point
+                if (expression.value() == 1.0) {
+                  ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
+                                   origin.y - static_cast<float>(y * zoom));
+                  draw_list->AddCircleFilled(screen_pos, dot_size, inequality_color);
+                }
+              }
+            }
+            
+            plotted = true;
+          }
+        }
+
         // check for implicit form: f(x,y) = g(x,y)
         if (!plotted) {
           size_t equals_pos = findTopLevelEquals(func_str);
