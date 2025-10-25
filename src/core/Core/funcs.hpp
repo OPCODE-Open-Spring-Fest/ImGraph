@@ -56,5 +56,31 @@ static size_t findTopLevelEquals(const std::string& str) {
   return std::string::npos;
 }
 
+// function to check if expression contains inequality operators
+static bool hasInequalityOperator(const std::string& str) {
+  int depth = 0;
+  for (size_t i = 0; i < str.size(); ++i) {
+    char c = str[i];
+    
+    if (c == '(') {
+      ++depth;
+    } else if (c == ')') {
+      --depth;
+    } else if (depth == 0) {
+      // Check for <, >, <=, >=, !=, ==
+      if (c == '<' || c == '>') {
+        return true;
+      }
+      if (c == '!' && i + 1 < str.size() && str[i+1] == '=') {
+        return true;
+      }
+      if (c == '=' && i + 1 < str.size() && str[i+1] == '=') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 #endif  // IMGRAPH_FUNCS_HPP
 
