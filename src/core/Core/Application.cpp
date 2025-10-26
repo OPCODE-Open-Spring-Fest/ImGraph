@@ -31,6 +31,9 @@ Application::Application(const std::string& title) {
   }
 
   m_window = std::make_unique<Window>(Window::Settings{title});
+  
+  // Initialize with one default expression
+  m_expressions.emplace_back("r = 1 + 0.5*cos(theta)", 0.78f, 0.27f, 0.25f);
 }
 
 Application::~Application() {
@@ -112,348 +115,340 @@ ExitStatus App::Application::run() {
       const ImGuiViewport* viewport = ImGui::GetMainViewport();
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
+      
+      const float sidebar_width = m_sidebar_visible ? 240.0f : 50.0f;
+      const float topbar_height = 50.0f;
 
-      static char function[1024] = "r = 1 + 0.5*cos(theta)";
-      static float zoom = 100.0f;
-
-      // Left Pane (expression)
+      // Dark top bar (Desmos style)
       {
         ImGui::SetNextWindowPos(base_pos);
-        ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.25f, base_size.y));
-        ImGui::Begin("Left Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
-        ImGui::InputTextMultiline("##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
-        ImGui::SliderFloat("Graph Scale", &zoom, 10.0f, 500.0f, "%.1f");
+        ImGui::SetNextWindowSize(ImVec2(base_size.x, topbar_height));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(15, 10));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
+        ImGui::Begin("TopBar", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::Text("Untitled Graph");
+        ImGui::PopStyleColor();
+        
+        ImGui::SameLine(200);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.5f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.55f, 0.95f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        if (ImGui::Button("Save", ImVec2(60, 30))) {}
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
+        ImGui::SameLine(base_size.x * 0.5f - 30);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::Text("desmos");
+        ImGui::PopStyleColor();
+        
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         ImGui::End();
       }
 
-      // Right Pane (Graphing Area)
-      {
+      // Sidebar
+      if (m_sidebar_visible) {
+        // Toolbar
+        {
+          ImGui::SetNextWindowPos(ImVec2(base_pos.x, base_pos.y + topbar_height));
+          ImGui::SetNextWindowSize(ImVec2(240, 50));
+          ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+          ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+          ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+          
+          ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+          ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+          if (ImGui::Button("+", ImVec2(30, 30))) {
+            static const std::array<std::array<float, 3>, 10> desmos_colors = {{
+              {0.78f, 0.27f, 0.25f}, {0.25f, 0.5f, 0.78f}, {0.27f, 0.63f, 0.27f},
+              {0.59f, 0.29f, 0.64f}, {0.93f, 0.49f, 0.18f}, {0.15f, 0.68f, 0.68f},
+              {0.89f, 0.24f, 0.59f}, {0.47f, 0.33f, 0.28f}, {0.2f, 0.2f, 0.2f}, {0.0f, 0.5f, 0.25f}
+            }};
+            auto color = desmos_colors[m_expressions.size() % desmos_colors.size()];
+            m_expressions.emplace_back("", color[0], color[1], color[2]);
+          }
+          ImGui::PopStyleVar();
+          ImGui::PopStyleColor(3);
+          
+          ImGui::SameLine();
+          ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+          ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+          if (ImGui::Button("<<", ImVec2(30, 30))) { m_sidebar_visible = false; }
+          ImGui::PopStyleColor(3);
+          
+          ImGui::PopStyleColor();
+          ImGui::PopStyleVar();
+          ImGui::End();
+        }
+        
+        // Expression list
+        {
+          ImGui::SetNextWindowPos(ImVec2(base_pos.x, base_pos.y + topbar_height + 50));
+          ImGui::SetNextWindowSize(ImVec2(240, base_size.y - topbar_height - 50));
+          ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+          ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 1));
+          ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+          ImGui::Begin("Expressions", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+          
+          for (size_t i = 0; i < m_expressions.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 8));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            ImGui::BeginChild("ExprRow", ImVec2(-FLT_MIN, 50), true, ImGuiWindowFlags_NoScrollbar);
+            
+            ImGui::SetCursorPos(ImVec2(8, 15));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+            ImGui::Text("%zu", i + 1);
+            ImGui::PopStyleColor();
+            
+            // Draw color dot manually
+            ImDrawList* draw_list_ui = ImGui::GetWindowDrawList();
+            ImVec2 color_dot_pos = ImGui::GetWindowPos();
+            color_dot_pos.x += 34;
+            color_dot_pos.y += 25;
+            const ImU32 color_circle = IM_COL32(
+              static_cast<int>(m_expressions[i].color[0] * 255),
+              static_cast<int>(m_expressions[i].color[1] * 255),
+              static_cast<int>(m_expressions[i].color[2] * 255), 255
+            );
+            draw_list_ui->AddCircleFilled(color_dot_pos, 8.0f, color_circle);
+            
+            // Invisible color picker button over the dot
+            ImGui::SetCursorPos(ImVec2(26, 17));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            ImGui::SetNextItemWidth(16);
+            ImGui::ColorEdit4("##color", m_expressions[i].color.data(), 
+                             ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | 
+                             ImGuiColorEditFlags_NoBorder | ImGuiColorEditFlags_NoTooltip | 
+                             ImGuiColorEditFlags_AlphaPreviewHalf);
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(2);
+            
+            // Expression text input
+            ImGui::SetCursorPos(ImVec2(60, 13));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 6));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1.0f, 1.0f, 1.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputText("##expr", m_expressions[i].text, sizeof(m_expressions[i].text));
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+            
+            ImGui::SetCursorPos(ImVec2(200, 13));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 1.0f, 1.0f, 0.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+            if (ImGui::Button("x", ImVec2(25, 25))) {
+              m_expressions.erase(m_expressions.begin() + i);
+              ImGui::PopStyleColor(3);
+              ImGui::EndChild();
+              ImGui::PopStyleColor();
+              ImGui::PopStyleVar();
+              ImGui::PopID();
+              break;
+            }
+            ImGui::PopStyleColor(3);
+            
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+            ImGui::PopID();
+          }
+          
+          ImGui::PopStyleColor();
+          ImGui::PopStyleVar(2);
+          ImGui::End();
+        }
+      } else {
+        // Collapsed sidebar - just >> button with tooltip
+        ImGui::SetNextWindowPos(ImVec2(base_pos.x, base_pos.y + topbar_height));
+        ImGui::SetNextWindowSize(ImVec2(45, 45));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
-        ImGui::SetNextWindowPos(ImVec2(base_pos.x + base_size.x * 0.25f, base_pos.y));
-        ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.75f, base_size.y));
-        ImGui::Begin("Right Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+        ImGui::Begin("CollapsedBar", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        
+        // Just >> button with border
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.95f, 0.95f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        if (ImGui::Button(">>", ImVec2(33, 33))) {
+          m_sidebar_visible = true;
+        }
+        // Tooltip on hover
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("Show List");
+        }
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor(3);
+        
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+        ImGui::End();
+      }
+
+      // Right Pane (Graphing Area) - Exact Desmos style
+      {
+        const float topbar_height = 50.0f;
+        const float sidebar_width = m_sidebar_visible ? 240.0f : 40.0f;
+        const float toolbar_width = 50.0f;
+        
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImGui::SetNextWindowPos(ImVec2(base_pos.x + sidebar_width, base_pos.y + topbar_height));
+        ImGui::SetNextWindowSize(ImVec2(base_size.x - sidebar_width - toolbar_width, base_size.y - topbar_height));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin("Graph", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
         const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
         const auto canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
         const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
-        float lineThickness = 6.0f;
-        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        std::vector<ImVec2> points;
-
-        // (f(t), g(t))
-        std::string func_str(function);
         
-
-        bool plotted = false;
-
-        if (!func_str.empty() && func_str.front() == '(' && func_str.back() == ')') {
-          const std::string inner = func_str.substr(1, func_str.size() - 2);
-          // top-level comma separating f and g
-          int depth = 0;
-          size_t split_pos = std::string::npos;
-          for (size_t i = 0; i < inner.size(); ++i) {
-            char c = inner[i];
-            if (c == '(')
-              ++depth;
-            else if (c == ')')
-              --depth;
-            else if (c == ',' && depth == 0) {
-              split_pos = i;
-              break;
-            }
-          }
-
-          if (split_pos != std::string::npos) {
-            std::string fx = trim(inner.substr(0, split_pos));
-            std::string gx = trim(inner.substr(split_pos + 1));
-
-            // Prepare exprtk 
-            double t = 0.0;
-            exprtk::symbol_table<double> sym_t;
-            sym_t.add_constants();
-            addConstants(sym_t);
-            sym_t.add_variable("t", t);
-
-            exprtk::expression<double> expr_fx;
-            expr_fx.register_symbol_table(sym_t);
-            exprtk::expression<double> expr_gx;
-            expr_gx.register_symbol_table(sym_t);
-
-            exprtk::parser<double> parser;
-            bool ok_fx = parser.compile(fx, expr_fx);
-            bool ok_gx = parser.compile(gx, expr_gx);
-
-            if (ok_fx && ok_gx) {
-              // iterate t  
-              const double t_min = -10.0;
-              const double t_max = 10.0;
-              const double t_step = 0.02;  
-
-              for (t = t_min; t <= t_max; t += t_step) {
-                const double vx = expr_fx.value();
-                const double vy = expr_gx.value();
-
-                
-                ImVec2 screen_pos(origin.x + static_cast<float>(vx * zoom),
-                    origin.y - static_cast<float>(vy * zoom));
-                points.push_back(screen_pos);
-              }
-
-              // Draw  curve
-              draw_list->AddPolyline(points.data(),
-                  points.size(),
-                  IM_COL32(64, 128, 199, 255),
-                  ImDrawFlags_None,
-                  lineThickness);
-              plotted = true;
-            }
-          }
-        }
-
-        // check for inequality 
-        if (!plotted && hasInequalityOperator(func_str)) {
-          double x = 0.0, y = 0.0;
-          exprtk::symbol_table<double> symbol_table;
-          symbol_table.add_constants();
-          addConstants(symbol_table);
-          symbol_table.add_variable("x", x);
-          symbol_table.add_variable("y", y);
-          
-          exprtk::expression<double> expression;
-          expression.register_symbol_table(symbol_table);
-          
-          exprtk::parser<double> parser;
-          
-          if (parser.compile(func_str, expression)) {
-            // grid parameters
-            const double x_min = -canvas_sz.x / (2 * zoom);
-            const double x_max = canvas_sz.x / (2 * zoom);
-            const double y_min = -canvas_sz.y / (2 * zoom);
-            const double y_max = canvas_sz.y / (2 * zoom);
-            
-            // adaptive step size with performance limit
-            const double step = std::max(0.025, 1.5 / zoom);
-            const ImU32 inequality_color = IM_COL32(100, 150, 255, 180);
-            const float dot_size = std::max(1.5f, zoom / 60.0f);
-            
-            
-            for (y = y_min; y <= y_max; y += step) {
-              for (x = x_min; x <= x_max; x += step) {
-                
-                // if expression is true, plot the point
-                if (expression.value() == 1.0) {
-                  ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
-                                   origin.y - static_cast<float>(y * zoom));
-                  draw_list->AddCircleFilled(screen_pos, dot_size, inequality_color);
-                }
-              }
-            }
-            
-            plotted = true;
-          }
-        }
-
-        // check for implicit form: f(x,y) = g(x,y)
-        if (!plotted) {
-          size_t equals_pos = findTopLevelEquals(func_str);      
-          bool has_double_equals = hasEqualsEqualsOperator(func_str);
-
-          if (equals_pos != std::string::npos || has_double_equals) {
-          
-            std::string implicit_expr;
-
-            if (has_double_equals) {
-              // Handle == operator
-              std::string temp_str = func_str;
-              int depth = 0;
-              size_t eq_pos = std::string::npos;
-              
-              for (size_t i = 0; i < temp_str.size() - 1; ++i) {
-                char c = temp_str[i];
-                if (c == '(') ++depth;
-                else if (c == ')') --depth;
-                else if (depth == 0 && c == '=' && temp_str[i+1] == '=') {
-                  eq_pos = i;
-                  break;
-                }
-              }
-              
-              if (eq_pos != std::string::npos) {
-                std::string lhs = trim(temp_str.substr(0, eq_pos));
-                std::string rhs = trim(temp_str.substr(eq_pos + 2)); // +2 to skip ==
-                implicit_expr = "(" + lhs + ") - (" + rhs + ")";
-              }
-            } else {
-              // Handle = operator
-              std::string lhs = trim(func_str.substr(0, equals_pos));
-              std::string rhs = trim(func_str.substr(equals_pos + 1));
-              implicit_expr = "(" + lhs + ") - (" + rhs + ")";
-            }
-
-            if (!implicit_expr.empty()) {
-              
-            // setup exprtk with x and y variables
-            double x = 0.0, y = 0.0;
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("x", x);
-            symbolTable.add_variable("y", y);
-            
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-            
-            exprtk::parser<double> parser;
-            bool compile_ok = parser.compile(implicit_expr, expression);
-            
-            if (compile_ok) {
-              // grid parameters
-              const double x_min = -canvas_sz.x / (2 * zoom);
-              const double x_max = canvas_sz.x / (2 * zoom);
-              const double y_min = -canvas_sz.y / (2 * zoom);
-              const double y_max = canvas_sz.y / (2 * zoom);
-              const double step = std::max(0.008, 1.0 / zoom); //dynamic step based on zoom level
-              
-              const ImU32 implicit_color = IM_COL32(64, 199, 128, 255);
-              const float dot_radius = 2.5f;
-              
-              // scan horizontally for sign changes
-              for (y = y_min; y <= y_max; y += step) {
-                double prev_val = 0.0;
-                bool first = true;
-                
-                for (x = x_min; x <= x_max; x += step) {
-                  double curr_val = expression.value();
-                  
-                  if (!first && prev_val * curr_val < 0) {
-                    // sign change detected
-                    double t = prev_val / (prev_val - curr_val);
-                    double x_zero = (x - step) + t * step;
-                    double y_zero = y;
-                    
-                    // transform to screen coordinates and draw immediately
-                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
-                                     origin.y - static_cast<float>(y_zero * zoom));
-                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
-                  }
-                  
-                  prev_val = curr_val;
-                  first = false;
-                }
-              }
-              
-              // vertical scan
-              for (x = x_min; x <= x_max; x += step) {
-                double prev_val = 0.0;
-                bool first = true;
-                
-                for (y = y_min; y <= y_max; y += step) {
-                  double curr_val = expression.value();
-                  
-                  if (!first && prev_val * curr_val < 0) {
-                    // sign change detected
-                    double t = prev_val / (prev_val - curr_val);
-                    double x_zero = x;
-                    double y_zero = (y - step) + t * step;
+        // Draw fine grid (Desmos style - very light)
+        const float grid_step = m_zoom;
+        const ImU32 grid_color_fine = IM_COL32(245, 245, 245, 255);
+        const ImU32 grid_color_major = IM_COL32(230, 230, 230, 255);
         
-                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
-                                     origin.y - static_cast<float>(y_zero * zoom));
-                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
-                  }
-                  
-                  prev_val = curr_val;
-                  first = false;
-                }
-              }
-              
-                plotted = true;
-              }
+        // Fine vertical grid lines
+        for (float x = fmodf(origin.x - canvas_p0.x, grid_step); x < canvas_sz.x; x += grid_step) {
+          float abs_x = x + canvas_p0.x;
+          draw_list->AddLine(ImVec2(abs_x, canvas_p0.y), ImVec2(abs_x, canvas_p1.y), grid_color_fine, 1.0f);
+        }
+        
+        // Fine horizontal grid lines
+        for (float y = fmodf(origin.y - canvas_p0.y, grid_step); y < canvas_sz.y; y += grid_step) {
+          float abs_y = y + canvas_p0.y;
+          draw_list->AddLine(ImVec2(canvas_p0.x, abs_y), ImVec2(canvas_p1.x, abs_y), grid_color_fine, 1.0f);
+        }
+        
+        // Major grid lines every 5 units
+        for (float x = fmodf(origin.x - canvas_p0.x, grid_step * 2); x < canvas_sz.x; x += grid_step * 2) {
+          float abs_x = x + canvas_p0.x;
+          draw_list->AddLine(ImVec2(abs_x, canvas_p0.y), ImVec2(abs_x, canvas_p1.y), grid_color_major, 1.0f);
+        }
+        
+        for (float y = fmodf(origin.y - canvas_p0.y, grid_step * 2); y < canvas_sz.y; y += grid_step * 2) {
+          float abs_y = y + canvas_p0.y;
+          draw_list->AddLine(ImVec2(canvas_p0.x, abs_y), ImVec2(canvas_p1.x, abs_y), grid_color_major, 1.0f);
+        }
+        
+        // Draw axes (dark, like Desmos)
+        float axisThickness = 1.5f;
+        const ImU32 axis_color = IM_COL32(0, 0, 0, 255);
+        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), axis_color, axisThickness);
+        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), axis_color, axisThickness);
+        
+        // Draw axis labels (exactly like Desmos)
+        ImGui::PushFont(io.FontDefault);
+        const ImU32 label_color = IM_COL32(130, 130, 130, 255);
+        
+        // X-axis labels (every 2 units for readability)
+        for (float x = fmodf(origin.x - canvas_p0.x, grid_step * 2); x < canvas_sz.x; x += grid_step * 2) {
+          float world_x = (x + canvas_p0.x - origin.x) / m_zoom;
+          if (fabs(world_x) > 0.5f) {
+            char label[16];
+            snprintf(label, sizeof(label), "%.0f", world_x);
+            ImVec2 text_size = ImGui::CalcTextSize(label);
+            ImVec2 label_pos(x + canvas_p0.x - text_size.x * 0.5f, origin.y + 8);
+            
+            if (fabs(x + canvas_p0.x - origin.x) > 20) {
+              draw_list->AddText(label_pos, label_color, label);
             }
           }
         }
-
-        if (!plotted) {
-          std::string func_str(function);
-          bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
-
-          if (is_polar) {
-            double theta;
-
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("theta", theta);
-
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-
-            std::string polar_function = func_str;
-            size_t eq_pos = func_str.find("r=");
-            if (eq_pos == std::string::npos) {
-              eq_pos = func_str.find("r =");
+        
+        // Y-axis labels (every 2 units for readability)
+        for (float y = fmodf(origin.y - canvas_p0.y, grid_step * 2); y < canvas_sz.y; y += grid_step * 2) {
+          float world_y = -(y + canvas_p0.y - origin.y) / m_zoom;
+          if (fabs(world_y) > 0.5f) {
+            char label[16];
+            snprintf(label, sizeof(label), "%.0f", world_y);
+            ImVec2 text_size = ImGui::CalcTextSize(label);
+            ImVec2 label_pos(origin.x - text_size.x - 8, y + canvas_p0.y - text_size.y * 0.5f);
+            
+            if (fabs(y + canvas_p0.y - origin.y) > 15) {
+              draw_list->AddText(label_pos, label_color, label);
             }
-            if (eq_pos != std::string::npos) {
-              size_t start_pos = func_str.find("=", eq_pos) + 1;
-              polar_function = func_str.substr(start_pos);
-              polar_function.erase(0, polar_function.find_first_not_of(" \t"));
-            }
-
-            exprtk::parser<double> parser;
-            if (parser.compile(polar_function, expression)) {
-              const double theta_min = 0.0;
-              const double theta_max = 4.0 * M_PI;  
-              const double theta_step = 0.02;
-
-              for (theta = theta_min; theta <= theta_max; theta += theta_step) {
-                const double r = expression.value();
-                
-                const double x = r * cos(theta);
-                const double y = r * sin(theta);
-
-                ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
-                    origin.y - static_cast<float>(y * zoom));
-                points.push_back(screen_pos);
-              }
-
-              draw_list->AddPolyline(points.data(),
-                  points.size(),
-                  IM_COL32(128, 64, 199, 255),
-                  ImDrawFlags_None,
-                  lineThickness);
-            }
-          } else {
-            double x;
-
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("x", x);
-
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-
-            exprtk::parser<double> parser;
-            parser.compile(function, expression);
-
-            for (x = -canvas_sz.x / (2 * zoom); x < canvas_sz.x / (2 * zoom); x += 0.05) {
-              const double y = expression.value();
-
-              ImVec2 screen_pos(origin.x + x * zoom, origin.y - y * zoom);
-              points.push_back(screen_pos);
-            }
-
-            draw_list->AddPolyline(points.data(),
-                points.size(),
-                IM_COL32(199, 68, 64, 255),
-                ImDrawFlags_None,
-                lineThickness);
           }
         }
+        ImGui::PopFont();
+        
+        // Plot all expressions (Desmos style - smooth anti-aliased lines)
+        float lineThickness = 2.5f;
+        for (const auto& expr : m_expressions) {
+          plot_expression(expr, draw_list, origin, canvas_sz, lineThickness);
+        }
+        
+        // "powered by desmos" watermark (bottom right)
+        ImGui::SetCursorPos(ImVec2(canvas_sz.x - 100, canvas_sz.y - 30));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 0.5f));
+        ImGui::Text("powered by\n  desmos");
+        ImGui::PopStyleColor();
 
+        ImGui::PopStyleVar();
         ImGui::End();
         ImGui::PopStyleColor();
+      }
+      
+      // Right toolbar
+      {
+        const float topbar_height = 50.0f;
+        ImGui::SetNextWindowPos(ImVec2(base_pos.x + base_size.x - 50, base_pos.y + topbar_height + 10));
+        ImGui::SetNextWindowSize(ImVec2(50, 150));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 10));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 0.0f));
+        ImGui::Begin("RightTools", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        
+        // Pencil/draw tool
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        if (ImGui::Button("✎", ImVec2(35, 35))) {}
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
+        ImGui::Spacing();
+        
+        // Zoom in
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        if (ImGui::Button("+", ImVec2(35, 35))) {
+          m_zoom = std::min(500.0f, m_zoom * 1.2f);
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
+        ImGui::Spacing();
+        
+        // Zoom out
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+        if (ImGui::Button("−", ImVec2(35, 35))) {
+          m_zoom = std::max(10.0f, m_zoom / 1.2f);
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        ImGui::End();
       }
     }
 
@@ -510,6 +505,376 @@ void Application::on_close() {
   APP_PROFILE_FUNCTION();
 
   stop();
+}
+
+void Application::plot_expression(const Expression& expr, ImDrawList* draw_list, 
+                                  const ImVec2& origin, const ImVec2& canvas_sz, 
+                                  float lineThickness) {
+  if (!expr.enabled || strlen(expr.text) == 0) {
+    return;
+  }
+  
+  std::vector<ImVec2> points;
+  std::string func_str(expr.text);
+  const ImU32 color = IM_COL32(
+    static_cast<int>(expr.color[0] * 255),
+    static_cast<int>(expr.color[1] * 255),
+    static_cast<int>(expr.color[2] * 255),
+    static_cast<int>(expr.color[3] * 255)
+  );
+  
+  bool plotted = false;
+
+  // Check for parametric form: (f(t), g(t))
+  if (!func_str.empty() && func_str.front() == '(' && func_str.back() == ')') {
+    const std::string inner = func_str.substr(1, func_str.size() - 2);
+    int depth = 0;
+    size_t split_pos = std::string::npos;
+    for (size_t i = 0; i < inner.size(); ++i) {
+      char c = inner[i];
+      if (c == '(')
+        ++depth;
+      else if (c == ')')
+        --depth;
+      else if (c == ',' && depth == 0) {
+        split_pos = i;
+        break;
+      }
+    }
+
+    if (split_pos != std::string::npos) {
+      std::string fx = trim(inner.substr(0, split_pos));
+      std::string gx = trim(inner.substr(split_pos + 1));
+
+      double t = 0.0;
+      exprtk::symbol_table<double> sym_t;
+      sym_t.add_constants();
+      addConstants(sym_t);
+      sym_t.add_variable("t", t);
+
+      exprtk::expression<double> expr_fx;
+      expr_fx.register_symbol_table(sym_t);
+      exprtk::expression<double> expr_gx;
+      expr_gx.register_symbol_table(sym_t);
+
+      exprtk::parser<double> parser;
+      bool ok_fx = parser.compile(fx, expr_fx);
+      bool ok_gx = parser.compile(gx, expr_gx);
+
+      if (ok_fx && ok_gx) {
+        const double t_min = -10.0;
+        const double t_max = 10.0;
+        const double t_step = 0.02;
+
+        for (t = t_min; t <= t_max; t += t_step) {
+          const double vx = expr_fx.value();
+          const double vy = expr_gx.value();
+
+          ImVec2 screen_pos(origin.x + static_cast<float>(vx * m_zoom),
+              origin.y - static_cast<float>(vy * m_zoom));
+          points.push_back(screen_pos);
+        }
+
+        draw_list->AddPolyline(points.data(), points.size(), color,
+            ImDrawFlags_None, lineThickness);
+        plotted = true;
+      }
+    }
+  }
+
+  // Check for inequality
+  if (!plotted && hasInequalityOperator(func_str)) {
+    double x = 0.0, y = 0.0;
+    exprtk::symbol_table<double> symbol_table;
+    symbol_table.add_constants();
+    addConstants(symbol_table);
+    symbol_table.add_variable("x", x);
+    symbol_table.add_variable("y", y);
+    
+    exprtk::expression<double> expression;
+    expression.register_symbol_table(symbol_table);
+    
+    exprtk::parser<double> parser;
+    
+    if (parser.compile(func_str, expression)) {
+      const double x_min = -canvas_sz.x / (2 * m_zoom);
+      const double x_max = canvas_sz.x / (2 * m_zoom);
+      const double y_min = -canvas_sz.y / (2 * m_zoom);
+      const double y_max = canvas_sz.y / (2 * m_zoom);
+      
+      const double step = std::max(0.025, 1.5 / m_zoom);
+      const float dot_size = std::max(1.5f, m_zoom / 60.0f);
+      
+      for (y = y_min; y <= y_max; y += step) {
+        for (x = x_min; x <= x_max; x += step) {
+          if (expression.value() == 1.0) {
+            ImVec2 screen_pos(origin.x + static_cast<float>(x * m_zoom),
+                             origin.y - static_cast<float>(y * m_zoom));
+            draw_list->AddCircleFilled(screen_pos, dot_size, color);
+          }
+        }
+      }
+      
+      plotted = true;
+    }
+  }
+
+  // Check for implicit form: f(x,y) = g(x,y)
+  if (!plotted) {
+    size_t equals_pos = findTopLevelEquals(func_str);
+    bool has_double_equals = hasEqualsEqualsOperator(func_str);
+
+    if (equals_pos != std::string::npos || has_double_equals) {
+      std::string implicit_expr;
+
+      if (has_double_equals) {
+        std::string temp_str = func_str;
+        int depth = 0;
+        size_t eq_pos = std::string::npos;
+        
+        for (size_t i = 0; i < temp_str.size() - 1; ++i) {
+          char c = temp_str[i];
+          if (c == '(') ++depth;
+          else if (c == ')') --depth;
+          else if (depth == 0 && c == '=' && temp_str[i+1] == '=') {
+            eq_pos = i;
+            break;
+          }
+        }
+        
+        if (eq_pos != std::string::npos) {
+          std::string lhs = trim(temp_str.substr(0, eq_pos));
+          std::string rhs = trim(temp_str.substr(eq_pos + 2));
+          implicit_expr = "(" + lhs + ") - (" + rhs + ")";
+        }
+      } else {
+        std::string lhs = trim(func_str.substr(0, equals_pos));
+        std::string rhs = trim(func_str.substr(equals_pos + 1));
+        implicit_expr = "(" + lhs + ") - (" + rhs + ")";
+      }
+
+      if (!implicit_expr.empty()) {
+        double x = 0.0, y = 0.0;
+        exprtk::symbol_table<double> symbolTable;
+        symbolTable.add_constants();
+        addConstants(symbolTable);
+        symbolTable.add_variable("x", x);
+        symbolTable.add_variable("y", y);
+        
+        exprtk::expression<double> expression;
+        expression.register_symbol_table(symbolTable);
+        
+        exprtk::parser<double> parser;
+        bool compile_ok = parser.compile(implicit_expr, expression);
+        
+        if (compile_ok) {
+          const double x_min = -canvas_sz.x / (2 * m_zoom);
+          const double x_max = canvas_sz.x / (2 * m_zoom);
+          const double y_min = -canvas_sz.y / (2 * m_zoom);
+          const double y_max = canvas_sz.y / (2 * m_zoom);
+          const double step = std::max(0.008, 1.0 / m_zoom);
+          
+          const float dot_radius = 2.5f;
+          
+          // Horizontal scan
+          for (y = y_min; y <= y_max; y += step) {
+            double prev_val = 0.0;
+            bool first = true;
+            
+            for (x = x_min; x <= x_max; x += step) {
+              double curr_val = expression.value();
+              
+              if (!first && prev_val * curr_val < 0) {
+                double t = prev_val / (prev_val - curr_val);
+                double x_zero = (x - step) + t * step;
+                double y_zero = y;
+                
+                ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * m_zoom),
+                                 origin.y - static_cast<float>(y_zero * m_zoom));
+                draw_list->AddCircleFilled(screen_pos, dot_radius, color);
+              }
+              
+              prev_val = curr_val;
+              first = false;
+            }
+          }
+          
+          // Vertical scan
+          for (x = x_min; x <= x_max; x += step) {
+            double prev_val = 0.0;
+            bool first = true;
+            
+            for (y = y_min; y <= y_max; y += step) {
+              double curr_val = expression.value();
+              
+              if (!first && prev_val * curr_val < 0) {
+                double t = prev_val / (prev_val - curr_val);
+                double x_zero = x;
+                double y_zero = (y - step) + t * step;
+    
+                ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * m_zoom),
+                                 origin.y - static_cast<float>(y_zero * m_zoom));
+                draw_list->AddCircleFilled(screen_pos, dot_radius, color);
+              }
+              
+              prev_val = curr_val;
+              first = false;
+            }
+          }
+          
+          plotted = true;
+        }
+      }
+    }
+  }
+
+  // Check for polar or regular function
+  if (!plotted) {
+    bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
+
+    if (is_polar) {
+      double theta;
+
+      exprtk::symbol_table<double> symbolTable;
+      symbolTable.add_constants();
+      addConstants(symbolTable);
+      symbolTable.add_variable("theta", theta);
+
+      exprtk::expression<double> expression;
+      expression.register_symbol_table(symbolTable);
+
+      std::string polar_function = func_str;
+      size_t eq_pos = func_str.find("r=");
+      if (eq_pos == std::string::npos) {
+        eq_pos = func_str.find("r =");
+      }
+      if (eq_pos != std::string::npos) {
+        size_t start_pos = func_str.find("=", eq_pos) + 1;
+        polar_function = func_str.substr(start_pos);
+        polar_function.erase(0, polar_function.find_first_not_of(" \t"));
+      }
+
+      exprtk::parser<double> parser;
+      if (parser.compile(polar_function, expression)) {
+        const double theta_min = 0.0;
+        const double theta_max = 4.0 * M_PI;
+        const double theta_step = 0.02;
+
+        for (theta = theta_min; theta <= theta_max; theta += theta_step) {
+          const double r = expression.value();
+          
+          const double x = r * cos(theta);
+          const double y = r * sin(theta);
+
+          ImVec2 screen_pos(origin.x + static_cast<float>(x * m_zoom),
+              origin.y - static_cast<float>(y * m_zoom));
+          points.push_back(screen_pos);
+        }
+
+        draw_list->AddPolyline(points.data(), points.size(), color,
+            ImDrawFlags_None, lineThickness);
+      }
+    } else {
+      // Regular y = f(x) function
+      double x;
+
+      exprtk::symbol_table<double> symbolTable;
+      symbolTable.add_constants();
+      addConstants(symbolTable);
+      symbolTable.add_variable("x", x);
+
+      exprtk::expression<double> expression;
+      expression.register_symbol_table(symbolTable);
+
+      exprtk::parser<double> parser;
+      if (parser.compile(func_str, expression)) {
+        for (x = -canvas_sz.x / (2 * m_zoom); x < canvas_sz.x / (2 * m_zoom); x += 0.05) {
+          const double y = expression.value();
+
+          ImVec2 screen_pos(origin.x + static_cast<float>(x * m_zoom), 
+                           origin.y - static_cast<float>(y * m_zoom));
+          points.push_back(screen_pos);
+        }
+
+        draw_list->AddPolyline(points.data(), points.size(), color,
+            ImDrawFlags_None, lineThickness);
+      }
+    }
+  }
+
+  // Check for polar or regular function
+  if (!plotted) {
+    bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
+
+    if (is_polar) {
+      double theta;
+
+      exprtk::symbol_table<double> symbolTable;
+      symbolTable.add_constants();
+      addConstants(symbolTable);
+      symbolTable.add_variable("theta", theta);
+
+      exprtk::expression<double> expression;
+      expression.register_symbol_table(symbolTable);
+
+      std::string polar_function = func_str;
+      size_t eq_pos = func_str.find("r=");
+      if (eq_pos == std::string::npos) {
+        eq_pos = func_str.find("r =");
+      }
+      if (eq_pos != std::string::npos) {
+        size_t start_pos = func_str.find("=", eq_pos) + 1;
+        polar_function = func_str.substr(start_pos);
+        polar_function.erase(0, polar_function.find_first_not_of(" \t"));
+      }
+
+      exprtk::parser<double> parser;
+      if (parser.compile(polar_function, expression)) {
+        const double theta_min = 0.0;
+        const double theta_max = 4.0 * M_PI;
+        const double theta_step = 0.02;
+
+        for (theta = theta_min; theta <= theta_max; theta += theta_step) {
+          const double r = expression.value();
+          
+          const double x = r * cos(theta);
+          const double y = r * sin(theta);
+
+          ImVec2 screen_pos(origin.x + static_cast<float>(x * m_zoom),
+              origin.y - static_cast<float>(y * m_zoom));
+          points.push_back(screen_pos);
+        }
+
+        draw_list->AddPolyline(points.data(), points.size(), color,
+            ImDrawFlags_None, lineThickness);
+      }
+    } else {
+      // Regular y = f(x) function
+      double x;
+
+      exprtk::symbol_table<double> symbolTable;
+      symbolTable.add_constants();
+      addConstants(symbolTable);
+      symbolTable.add_variable("x", x);
+
+      exprtk::expression<double> expression;
+      expression.register_symbol_table(symbolTable);
+
+      exprtk::parser<double> parser;
+      if (parser.compile(func_str, expression)) {
+        for (x = -canvas_sz.x / (2 * m_zoom); x < canvas_sz.x / (2 * m_zoom); x += 0.05) {
+          const double y = expression.value();
+
+          ImVec2 screen_pos(origin.x + static_cast<float>(x * m_zoom), 
+                           origin.y - static_cast<float>(y * m_zoom));
+          points.push_back(screen_pos);
+        }
+
+        draw_list->AddPolyline(points.data(), points.size(), color,
+            ImDrawFlags_None, lineThickness);
+      }
+    }
+  }
 }
 
 }  // namespace App
