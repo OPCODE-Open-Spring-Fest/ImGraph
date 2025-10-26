@@ -23,6 +23,12 @@ endif ()
 
 target_include_directories(${NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(${NAME} PRIVATE cxx_std_20)
+
+# Add /bigobj flag for MSVC to handle large object files
+if(MSVC)
+  target_compile_options(${NAME} PRIVATE /bigobj)
+endif()
+
 target_link_libraries(${NAME}
   PRIVATE project_warnings
   PUBLIC fmt spdlog exprtk SDL2::SDL2 imgui Settings)
