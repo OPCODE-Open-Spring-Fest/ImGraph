@@ -138,41 +138,44 @@ ExitStatus App::Application::run() {
         const auto canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
         const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
         float lineThickness = 6.0f;
-        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
-
+        
         // --- Thin integer gridlines with adaptive spacing ---
         const ImU32 gridColor = IM_COL32(200, 200, 200, 255); // light gray
         const float gridThickness = 1.0f;                     // thin lines
         const float minPixelSpacing = 20.0f;                  // minimum spacing in pixels
-
+        
         // Dynamic step based on zoom
         float step = 1.0f;
         while (step * zoom < minPixelSpacing)
-            step *= 2.0f;
-
-        // Draw vertical gridlines
+        step *= 2.0f;
+        
+        
+        // Vertical gridlines
         for (float x = 0; origin.x + x * zoom < canvas_p1.x; x += step) {
+          if (x != 0) {
             draw_list->AddLine(ImVec2(origin.x + x * zoom, canvas_p0.y),
-                              ImVec2(origin.x + x * zoom, canvas_p1.y),
-                              gridColor, gridThickness);
-            if (x != 0)
-                draw_list->AddLine(ImVec2(origin.x - x * zoom, canvas_p0.y),
-                                  ImVec2(origin.x - x * zoom, canvas_p1.y),
-                                  gridColor, gridThickness);
+            ImVec2(origin.x + x * zoom, canvas_p1.y),
+            gridColor, gridThickness);
+            draw_list->AddLine(ImVec2(origin.x - x * zoom, canvas_p0.y),
+            ImVec2(origin.x - x * zoom, canvas_p1.y),
+            gridColor, gridThickness);
+          }
         }
-
-        // Draw horizontal gridlines
+        
+        // Horizontal gridlines
         for (float y = 0; origin.y + y * zoom < canvas_p1.y; y += step) {
+          if (y != 0) {
             draw_list->AddLine(ImVec2(canvas_p0.x, origin.y + y * zoom),
-                              ImVec2(canvas_p1.x, origin.y + y * zoom),
-                              gridColor, gridThickness);
-            if (y != 0)
-                draw_list->AddLine(ImVec2(canvas_p0.x, origin.y - y * zoom),
-                                  ImVec2(canvas_p1.x, origin.y - y * zoom),
-                                  gridColor, gridThickness);
+            ImVec2(canvas_p1.x, origin.y + y * zoom),
+            gridColor, gridThickness);
+            draw_list->AddLine(ImVec2(canvas_p0.x, origin.y - y * zoom),
+            ImVec2(canvas_p1.x, origin.y - y * zoom),
+            gridColor, gridThickness);
+          }
         }
-
+        
+        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
+        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
         std::vector<ImVec2> points;
 
         // (f(t), g(t))
