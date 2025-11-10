@@ -1,11 +1,11 @@
 #include "Application.hpp"
+#include<vector>
 
 #include <SDL2/SDL.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_sdlrenderer2.h>
 #include <imgui.h>
 
-#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,6 +18,8 @@
 #include "Settings/Project.hpp"
 #include "exprtk.hpp"
 #include "funcs.hpp"
+
+#include "Core/expression.hpp"
 
 namespace App {
 
@@ -83,6 +85,15 @@ ExitStatus App::Application::run() {
   ImGui_ImplSDL2_InitForSDLRenderer(m_window->get_native_window(), m_window->get_native_renderer());
   ImGui_ImplSDLRenderer2_Init(m_window->get_native_renderer());
 
+  // All the expressions
+  std::vector<Core::Expression> functions = {{{"tanh(x)"}, "#C74440", true}};
+
+  double zoom = 100.0;
+
+  //panning offset
+  double offsetx=0;
+  double offsety=0;
+
   m_running = true;
   while (m_running) {
     APP_PROFILE_SCOPE("MainLoop");
@@ -101,6 +112,33 @@ ExitStatus App::Application::run() {
           event.window.windowID == SDL_GetWindowID(m_window->get_native_window())) {
         on_event(event.window);
       }
+
+      if (event.type == SDL_MOUSEWHEEL) {
+          const float zoom_speed = 1.1f;
+          ImVec2 mousePos = ImGui::GetMousePos();
+
+          // Keep previous zoom for compensation
+          double prevZoom = zoom;
+
+          if (event.wheel.y > 0) zoom *= zoom_speed;
+          if (event.wheel.y < 0) zoom /= zoom_speed;
+          zoom = std::clamp(zoom, 10.0, 1000.0);
+
+          // Get viewport and origin (same as below in your render loop)
+          const ImGuiViewport* viewport = ImGui::GetMainViewport();
+          const ImVec2 base_pos = viewport->Pos;
+          const ImVec2 base_size = viewport->Size;
+          const ImVec2 origin(base_pos.x + base_size.x * 0.5f,
+                              base_pos.y + base_size.y * 0.5f);
+
+          // Convert mouse to world coordinates before zoom
+          double worldX = (mousePos.x - origin.x - offsetx) / prevZoom;
+          double worldY = (mousePos.y - origin.y - offsety) / -prevZoom;
+
+          // Adjust offsets to keep cursor fixed
+          offsetx = mousePos.x - origin.x - worldX * zoom;
+          offsety = mousePos.y - origin.y + worldY * zoom;
+      }
     }
 
     // Start the Dear ImGui frame
@@ -113,16 +151,45 @@ ExitStatus App::Application::run() {
       const ImVec2 base_pos = viewport->Pos;
       const ImVec2 base_size = viewport->Size;
 
-      static char function[1024] = "r = 1 + 0.5*cos(theta)";
-      static float zoom = 100.0f;
-
       // Left Pane (expression)
       {
         ImGui::SetNextWindowPos(base_pos);
         ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.25f, base_size.y));
-        ImGui::Begin("Left Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
-        ImGui::InputTextMultiline("##search", function, sizeof(function), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
-        ImGui::SliderFloat("Graph Scale", &zoom, 10.0f, 500.0f, "%.1f");
+        ImGui::Begin("Left Pane",
+            nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar);
+
+        if (ImGui::Button("+ Add Function")) {
+            functions.push_back({});
+        }
+
+        for (size_t i = 0; i < functions.size(); ++i) {
+          std::string label = "##function" + std::to_string(i);
+          ImGui::InputTextMultiline(label.c_str(),
+              functions[i].expr.data(),
+              functions[i].expr.size(),
+              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 4));
+
+          ImGui::Checkbox(("Visible##" + std::to_string(i)).c_str(), &functions[i].visible);
+
+          float color[3];
+          int r = 199, g = 68, b = 64;
+          if (functions[i].color.size() == 7 && functions[i].color[0] == '#') {
+              sscanf(functions[i].color.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+          }
+          color[0] = r / 255.0f;
+          color[1] = g / 255.0f;
+          color[2] = b / 255.0f;
+
+          if (ImGui::ColorEdit3(("Color##" + std::to_string(i)).c_str(), color)) {
+              char hexColor[16];
+              snprintf(hexColor, sizeof(hexColor), "#%02X%02X%02X",
+                       int(color[0] * 255), int(color[1] * 255), int(color[2] * 255));
+              functions[i].color = hexColor;
+          }
+        }
+
         ImGui::End();
       }
 
@@ -131,403 +198,203 @@ ExitStatus App::Application::run() {
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         ImGui::SetNextWindowPos(ImVec2(base_pos.x + base_size.x * 0.25f, base_pos.y));
         ImGui::SetNextWindowSize(ImVec2(base_size.x * 0.75f, base_size.y));
-        ImGui::Begin("Right Pane", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+        ImGui::Begin("Right Pane",
+            nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoTitleBar);
+
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
-        const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();
-        const auto canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
-        // --- PANNING IMPLEMENTATION BEGIN ---
+
+        // Define the graphing area within the window
+        const ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();     // Top-left corner of the window
+        const ImVec2 canvas_sz = ImGui::GetContentRegionAvail();  // Size of the window
+        const auto canvas_p1 =
+            ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);  // Bottom-right
+
+        // Define your coordinate system origin (e.g., center of the canvas)
+        const ImVec2 origin(canvas_p0.x + canvas_sz.x * 0.5f, canvas_p0.y + canvas_sz.y * 0.5f);
+
+        float lineThickness = 3.0f;
+
+        //panning logic
         static bool isPanning = false;
-        static ImVec2 lastMousePos = {0.0f, 0.0f};
-        static ImVec2 originOffset = {0.0f, 0.0f};
+        static ImVec2 panStart = ImVec2(0,0);
 
-        // Get mouse position
-        ImVec2 mousePos = ImGui::GetMousePos();
+        //get mouse position and state
+        ImGuiIO& io=ImGui::GetIO();
+        ImVec2 mousePos = io.MousePos;
 
-        // Detect click start only when cursor is inside the graphing area
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        // Check if mouse is over the canvas
+        bool isHovered = ImGui::IsWindowHovered();
+
+        // Left click pressed: start panning
+        if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             isPanning = true;
-            lastMousePos = mousePos;
+            panStart = mousePos;
         }
 
-        // Stop panning when mouse released
+        // Mouse released: stop panning
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
             isPanning = false;
         }
 
-        // While dragging, update origin offset
+        // If panning, update offset
         if (isPanning && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            ImVec2 delta = ImVec2(mousePos.x - lastMousePos.x, mousePos.y - lastMousePos.y);
-            originOffset.x += delta.x;
-            originOffset.y += delta.y;
-            lastMousePos = mousePos;
+            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+            offsetx += dragDelta.x;
+            offsety += dragDelta.y;
+            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
         }
 
-        // Apply offset to origin
-        const ImVec2 origin(
-            canvas_p0.x + canvas_sz.x * 0.5f + originOffset.x,
-            canvas_p0.y + canvas_sz.y * 0.5f + originOffset.y
-        );
-        // --- PANNING IMPLEMENTATION END ---
+        // 1. Draw Axes
+        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y+offsety),
+            ImVec2(canvas_p1.x, origin.y+offsety),
+            IM_COL32(0, 0, 0, 255),
+            lineThickness);  // X-axis
+        draw_list->AddLine(ImVec2(origin.x+offsetx, canvas_p0.y),
+            ImVec2(origin.x+offsetx, canvas_p1.y),
+            IM_COL32(0, 0, 0, 255),
+            lineThickness);  // Y-axis
 
-        float lineThickness = 6.0f;
-        
-        // --- Thin integer gridlines with adaptive spacing ---
-        const ImU32 gridColor = IM_COL32(200, 200, 200, 255); // light gray
-        const float gridThickness = 1.0f;                     // thin lines
-        const float minPixelSpacing = 20.0f;                  // minimum spacing in pixels
-        
-        // Dynamic step based on zoom
-        float step = 1.0f;
-        while (step * zoom < minPixelSpacing)
-        step *= 2.0f;
-        
-        
-        // Vertical gridlines
-        for (float x = 0; origin.x + x * zoom < canvas_p1.x; x += step) {
-          if (x != 0) {
-            draw_list->AddLine(ImVec2(origin.x + x * zoom, canvas_p0.y),
-            ImVec2(origin.x + x * zoom, canvas_p1.y),
-            gridColor, gridThickness);
-            draw_list->AddLine(ImVec2(origin.x - x * zoom, canvas_p0.y),
-            ImVec2(origin.x - x * zoom, canvas_p1.y),
-            gridColor, gridThickness);
-          }
-        }
-        
-        // Horizontal gridlines
-        for (float y = 0; origin.y + y * zoom < canvas_p1.y; y += step) {
-          if (y != 0) {
-            draw_list->AddLine(ImVec2(canvas_p0.x, origin.y + y * zoom),
-            ImVec2(canvas_p1.x, origin.y + y * zoom),
-            gridColor, gridThickness);
-            draw_list->AddLine(ImVec2(canvas_p0.x, origin.y - y * zoom),
-            ImVec2(canvas_p1.x, origin.y - y * zoom),
-            gridColor, gridThickness);
-          }
-        }
-        
-        draw_list->AddLine(ImVec2(canvas_p0.x, origin.y), ImVec2(canvas_p1.x, origin.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        draw_list->AddLine(ImVec2(origin.x, canvas_p0.y), ImVec2(origin.x, canvas_p1.y), IM_COL32(0, 0, 0, 255), lineThickness);
-        std::vector<ImVec2> points;
+        // === Axis Markings (Ticks and Labels) ===
+        {
+            const ImU32 tickColor = IM_COL32(100, 100, 100, 255);
+            const ImU32 textColor = IM_COL32(50, 50, 50, 255);
+            const ImU32 gridColor = IM_COL32(200, 200, 200, 80);
+            const float tickLength = 5.0f;  // pixel length of tick
+            const float labelOffset = 15.0f;
 
-        // (f(t), g(t))
-        std::string func_str(function);
-        
+            ImGuiIO& io = ImGui::GetIO();
+            ImFont* font = io.FontDefault;
 
-        bool plotted = false;
+            // Step size for ticks (auto-adjust with zoom)
+            double step = 1.0;
+            double pixelsPerUnit = zoom;
+            if (pixelsPerUnit > 400) step = 0.1;
+            else if (pixelsPerUnit > 200) step = 0.25;
+            else if (pixelsPerUnit > 100) step = 0.5;
+            else if (pixelsPerUnit > 50) step = 1.0;
+            else if (pixelsPerUnit > 20) step = 2.0;
+            else if (pixelsPerUnit > 10) step = 5.0;
+            else step = 10.0;
 
-        if (!func_str.empty() && func_str.front() == '(' && func_str.back() == ')') {
-          const std::string inner = func_str.substr(1, func_str.size() - 2);
-          // top-level comma separating f and g
-          int depth = 0;
-          size_t split_pos = std::string::npos;
-          for (size_t i = 0; i < inner.size(); ++i) {
-            char c = inner[i];
-            if (c == '(')
-              ++depth;
-            else if (c == ')')
-              --depth;
-            else if (c == ',' && depth == 0) {
-              split_pos = i;
-              break;
-            }
-          }
+            // Determine world bounds
+            const double xmin = (-canvas_sz.x / 2.0 - offsetx) / zoom;
+            const double xmax = (canvas_sz.x / 2.0 - offsetx) / zoom;
+            const double ymin = (-canvas_sz.y / 2.0 + offsety) / zoom;
+            const double ymax = (canvas_sz.y / 2.0 + offsety) / zoom;
 
-          if (split_pos != std::string::npos) {
-            std::string fx = trim(inner.substr(0, split_pos));
-            std::string gx = trim(inner.substr(split_pos + 1));
+            // Round bounds to nearest multiple of step
+            const double xstart = std::floor(xmin / step) * step;
+            const double xend = std::ceil(xmax / step) * step;
+            const double ystart = std::floor(ymin / step) * step;
+            const double yend = std::ceil(ymax / step) * step;
 
-            // Prepare exprtk 
-            double t = 0.0;
-            exprtk::symbol_table<double> sym_t;
-            sym_t.add_constants();
-            addConstants(sym_t);
-            sym_t.add_variable("t", t);
+            // X-axis ticks
+            for (double xw = xstart; xw <= xend; xw += step) {
+                float xScreen = origin.x + xw * zoom + offsetx;
+                draw_list->AddLine(ImVec2(xScreen, origin.y + offsety - tickLength),
+                                  ImVec2(xScreen, origin.y + offsety + tickLength),
+                                  tickColor, 1.0f);
 
-            exprtk::expression<double> expr_fx;
-            expr_fx.register_symbol_table(sym_t);
-            exprtk::expression<double> expr_gx;
-            expr_gx.register_symbol_table(sym_t);
-
-            exprtk::parser<double> parser;
-            bool ok_fx = parser.compile(fx, expr_fx);
-            bool ok_gx = parser.compile(gx, expr_gx);
-
-            if (ok_fx && ok_gx) {
-              // iterate t  
-              const double t_min = -10.0;
-              const double t_max = 10.0;
-              const double t_step = 0.02;  
-
-              for (t = t_min; t <= t_max; t += t_step) {
-               const double vx = expr_fx.value();
-               const double vy = expr_gx.value();
-              // The 'origin' variable already includes the pan offset.
-                ImVec2 screen_pos(
-                         origin.x + static_cast<float>(vx * zoom),
-                          origin.y - static_cast<float>(vy * zoom)
-                         );
-                points.push_back(screen_pos);
-              }
-
-              // Draw  curve
-              draw_list->AddPolyline(points.data(),
-                  points.size(),
-                  IM_COL32(64, 128, 199, 255),
-                  ImDrawFlags_None,
-                  lineThickness);
-              plotted = true;
-            }
-          }
-        }
-
-        // check for inequality 
-        if (!plotted && hasInequalityOperator(func_str)) {
-          double x = 0.0, y = 0.0;
-          exprtk::symbol_table<double> symbol_table;
-          symbol_table.add_constants();
-          addConstants(symbol_table);
-          symbol_table.add_variable("x", x);
-          symbol_table.add_variable("y", y);
-          
-          exprtk::expression<double> expression;
-          expression.register_symbol_table(symbol_table);
-          
-          exprtk::parser<double> parser;
-          
-          if (parser.compile(func_str, expression)) {
-            // grid parameters
-            const double x_min = (-canvas_sz.x * 0.5f - originOffset.x) / zoom;
-            const double x_max = ( canvas_sz.x * 0.5f - originOffset.x) / zoom;
-            const double y_min = (-canvas_sz.y * 0.5f + originOffset.y) / zoom;
-            const double y_max = ( canvas_sz.y * 0.5f + originOffset.y) / zoom;
-                        
-            // adaptive step size with performance limit
-            const double step = std::max(0.025, 1.5 / zoom);
-            const ImU32 inequality_color = IM_COL32(100, 150, 255, 180);
-            const float dot_size = std::max(1.5f, zoom / 60.0f);
-            
-            
-            for (y = y_min; y <= y_max; y += step) {
-              for (x = x_min; x <= x_max; x += step) {
-                
-                // if expression is true, plot the point
-                if (expression.value() == 1.0) {
-                  ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
-                                   origin.y - static_cast<float>(y * zoom));
-                  draw_list->AddCircleFilled(screen_pos, dot_size, inequality_color);
+                if (std::fabs(xw) > 1e-6) { // skip labeling origin
+                    char label[32];
+                    snprintf(label, sizeof(label), "%.2f", xw);
+                    draw_list->AddText(font, 13.0f,
+                                      ImVec2(xScreen - 10, origin.y + offsety + labelOffset),
+                                      textColor, label);
                 }
-              }
             }
-            
-            plotted = true;
-          }
+
+            // Y-axis ticks
+            for (double yw = ystart; yw <= yend; yw += step) {
+                float yScreen = origin.y - yw * zoom + offsety;
+                draw_list->AddLine(ImVec2(origin.x + offsetx - tickLength, yScreen),
+                                  ImVec2(origin.x + offsetx + tickLength, yScreen),
+                                  tickColor, 1.0f);
+
+                if (std::fabs(yw) > 1e-6) { // skip labeling origin
+                    char label[32];
+                    snprintf(label, sizeof(label), "%.2f", yw);
+                    draw_list->AddText(font, 13.0f,
+                                      ImVec2(origin.x + offsetx + labelOffset, yScreen - 10),
+                                      textColor, label);
+                }
+            }
+
+            // Vertical grid lines
+            for (double xw = xstart; xw <= xend; xw += step) {
+                float xScreen = origin.x + xw * zoom + offsetx;
+                draw_list->AddLine(
+                    ImVec2(xScreen, canvas_p0.y),
+                    ImVec2(xScreen, canvas_p1.y),
+                    gridColor,
+                    1.0f
+                );
+            }
+
+            // Horizontal grid lines
+            for (double yw = ystart; yw <= yend; yw += step) {
+                float yScreen = origin.y - yw * zoom + offsety;
+                draw_list->AddLine(
+                    ImVec2(canvas_p0.x, yScreen),
+                    ImVec2(canvas_p1.x, yScreen),
+                    gridColor,
+                    1.0f
+                );
+            }
         }
 
-        // check for implicit form: f(x,y) = g(x,y)
-        if (!plotted) {
-          size_t equals_pos = findTopLevelEquals(func_str);      
-          bool has_double_equals = hasEqualsEqualsOperator(func_str);
+        double x;
 
-          if (equals_pos != std::string::npos || has_double_equals) {
-          
-            std::string implicit_expr;
+        exprtk::symbol_table<double> symbolTable;
+        symbolTable.add_constants();
+        addConstants(symbolTable);
+        symbolTable.add_variable("x", x);
 
-            if (has_double_equals) {
-              // Handle == operator
-              std::string temp_str = func_str;
-              int depth = 0;
-              size_t eq_pos = std::string::npos;
-              
-              for (size_t i = 0; i < temp_str.size() - 1; ++i) {
-                char c = temp_str[i];
-                if (c == '(') ++depth;
-                else if (c == ')') --depth;
-                else if (depth == 0 && c == '=' && temp_str[i+1] == '=') {
-                  eq_pos = i;
-                  break;
-                }
-              }
-              
-              if (eq_pos != std::string::npos) {
-                std::string lhs = trim(temp_str.substr(0, eq_pos));
-                std::string rhs = trim(temp_str.substr(eq_pos + 2)); // +2 to skip ==
-                implicit_expr = "(" + lhs + ") - (" + rhs + ")";
-              }
-            } else {
-              // Handle = operator
-              std::string lhs = trim(func_str.substr(0, equals_pos));
-              std::string rhs = trim(func_str.substr(equals_pos + 1));
-              implicit_expr = "(" + lhs + ") - (" + rhs + ")";
-            }
+        exprtk::expression<double> expression;
+        expression.register_symbol_table(symbolTable);
 
-            if (!implicit_expr.empty()) {
-              
-            // setup exprtk with x and y variables
-            double x = 0.0, y = 0.0;
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("x", x);
-            symbolTable.add_variable("y", y);
-            
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-            
-            exprtk::parser<double> parser;
-            bool compile_ok = parser.compile(implicit_expr, expression);
-            
-            if (compile_ok) {
-              // grid parameters
-              const double x_min = (-canvas_sz.x * 0.5f - originOffset.x) / zoom;
-              const double x_max = ( canvas_sz.x * 0.5f - originOffset.x) / zoom;
-              const double y_min = (-canvas_sz.y * 0.5f + originOffset.y) / zoom;
-              const double y_max = ( canvas_sz.y * 0.5f + originOffset.y) / zoom;
-              const double step = std::max(0.008, 1.0 / zoom); //dynamic step based on zoom level
-              
-              const ImU32 implicit_color = IM_COL32(64, 199, 128, 255);
-              const float dot_radius = 2.5f;
-              
-              // scan horizontally for sign changes
-              for (y = y_min; y <= y_max; y += step) {
-                double prev_val = 0.0;
-                bool first = true;
-                
-                for (x = x_min; x <= x_max; x += step) {
-                  double curr_val = expression.value();
-                  
-                  if (!first && prev_val * curr_val < 0) {
-                    // sign change detected
-                    double t = prev_val / (prev_val - curr_val);
-                    double x_zero = (x - step) + t * step;
-                    double y_zero = y;
-                    
-                    // transform to screen coordinates and draw immediately
-                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
-                                     origin.y - static_cast<float>(y_zero * zoom));
-                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
-                  }
-                  
-                  prev_val = curr_val;
-                  first = false;
-                }
-              }
-              
-              // vertical scan
-              for (x = x_min; x <= x_max; x += step) {
-                double prev_val = 0.0;
-                bool first = true;
-                
-                for (y = y_min; y <= y_max; y += step) {
-                  double curr_val = expression.value();
-                  
-                  if (!first && prev_val * curr_val < 0) {
-                    // sign change detected
-                    double t = prev_val / (prev_val - curr_val);
-                    double x_zero = x;
-                    double y_zero = (y - step) + t * step;
-        
-                    ImVec2 screen_pos(origin.x + static_cast<float>(x_zero * zoom),
-                                     origin.y - static_cast<float>(y_zero * zoom));
-                    draw_list->AddCircleFilled(screen_pos, dot_radius, implicit_color);
-                  }
-                  
-                  prev_val = curr_val;
-                  first = false;
-                }
-              }
-              
-                plotted = true;
-              }
-            }
-          }
+        exprtk::parser<double> parser;
+        std::vector<exprtk::expression<double>> expressions(functions.size());
+
+        for (size_t i = 0; i < functions.size(); ++i) {
+            if (!functions[i].visible) continue;
+            expressions[i].register_symbol_table(symbolTable);
+            parser.compile(functions[i].expr.data(), expressions[i]);
         }
 
-        if (!plotted) {
-          std::string func_str(function);
-          bool is_polar = func_str.find("r=") != std::string::npos || func_str.find("r =") != std::string::npos;
+        for (size_t i = 0; i < functions.size(); ++i) {
+            if (!functions[i].visible) continue;
 
-          if (is_polar) {
-            double theta;
+            auto& expr = expressions[i];
+            std::vector<ImVec2> points;
+            points.reserve(static_cast<size_t>(canvas_sz.x / 2)); // small optimization
 
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("theta", theta);
+            // Compute X range based on panning offset
+            const double xmin = (-canvas_sz.x / 2.0 - offsetx) / zoom;
+            const double xmax = (canvas_sz.x / 2.0 - offsetx) / zoom;
+            const double step = 0.05;  // smaller → smoother curve
 
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-
-            std::string polar_function = func_str;
-            size_t eq_pos = func_str.find("r=");
-            if (eq_pos == std::string::npos) {
-              eq_pos = func_str.find("r =");
-            }
-            if (eq_pos != std::string::npos) {
-              size_t start_pos = func_str.find("=", eq_pos) + 1;
-              polar_function = func_str.substr(start_pos);
-              polar_function.erase(0, polar_function.find_first_not_of(" \t"));
+            for (x = xmin; x < xmax; x += step) {
+                const double y = expr.value();  // evaluate using current 'x' bound in symbolTable
+                points.push_back(ImVec2(origin.x + (x * zoom) + offsetx,
+                                        origin.y - (y * zoom) + offsety));
             }
 
-            exprtk::parser<double> parser;
-            if (parser.compile(polar_function, expression)) {
-              const double theta_min = 0.0;
-              const double theta_max = 4.0 * M_PI;  
-              const double theta_step = 0.02;
-
-              for (theta = theta_min; theta <= theta_max; theta += theta_step) {
-                const double r = expression.value();
-                
-                const double x = r * cos(theta);
-                const double y = r * sin(theta);
-
-                ImVec2 screen_pos(origin.x + static_cast<float>(x * zoom),
-                    origin.y - static_cast<float>(y * zoom));
-                points.push_back(screen_pos);
-              }
-
-              draw_list->AddPolyline(points.data(),
-                  points.size(),
-                  IM_COL32(128, 64, 199, 255),
-                  ImDrawFlags_None,
-                  lineThickness);
+            // Parse color (from hex string like "#C74440")
+            int r = 199, g = 68, b = 64;
+            if (functions[i].color.size() == 7 && functions[i].color[0] == '#') {
+                sscanf(functions[i].color.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
             }
-          } else {
-            double x;
 
-            exprtk::symbol_table<double> symbolTable;
-            symbolTable.add_constants();
-            addConstants(symbolTable);
-            symbolTable.add_variable("x", x);
-
-            exprtk::expression<double> expression;
-            expression.register_symbol_table(symbolTable);
-
-            exprtk::parser<double> parser;
-            parser.compile(function, expression);
-
-          // Calculate the visible x-range in world-space, accounting for the pan
-          const float world_x_min = (-canvas_sz.x * 0.5f - originOffset.x) / zoom;
-          const float world_x_max = ( canvas_sz.x * 0.5f - originOffset.x) / zoom;
-
-          // Evaluate the function across the correct visible world-range
-          for (x = world_x_min; x <= world_x_max; x += 0.05) {
-            const double y = expression.value();
-           // The 'origin' variable already includes the pan offset.
-            ImVec2 screen_pos(
-            origin.x + static_cast<float>(x * zoom),
-            origin.y - static_cast<float>(y * zoom)
-            );
-            points.push_back(screen_pos);
-          }
-
-            draw_list->AddPolyline(points.data(),
-                points.size(),
-                IM_COL32(199, 68, 64, 255),
-                ImDrawFlags_None,
-                lineThickness);
-          }
+            // Draw the function line
+            if (!points.empty()) {
+                draw_list->AddPolyline(points.data(), points.size(),
+                                      IM_COL32(r, g, b, 255),
+                                      ImDrawFlags_None,
+                                      lineThickness);
+            }
         }
 
         ImGui::End();
